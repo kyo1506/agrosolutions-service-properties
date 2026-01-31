@@ -9,6 +9,7 @@ public class PropertiesDbContext(DbContextOptions<PropertiesDbContext> options) 
     public DbSet<Fazenda> Fazendas => Set<Fazenda>();
     public DbSet<Talhao> Talhoes => Set<Talhao>();
     public DbSet<Sensor> Sensores => Set<Sensor>();
+    public DbSet<OutboxMessage> OutboxMessages => Set<OutboxMessage>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -79,6 +80,16 @@ public class PropertiesDbContext(DbContextOptions<PropertiesDbContext> options) 
             entity.Property(e => e.Fabricante).HasMaxLength(100);
             entity.Property(e => e.Latitude).HasColumnType("decimal(10,8)");
             entity.Property(e => e.Longitude).HasColumnType("decimal(11,8)");
+        });
+
+        // Configurações de OutboxMessage
+        modelBuilder.Entity<OutboxMessage>(entity =>
+        {
+            entity.ToTable("OutboxMessages");
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.EventType).IsRequired().HasMaxLength(500);
+            entity.Property(e => e.Payload).IsRequired();
+            entity.HasIndex(e => new { e.ProcessedAt, e.CreatedAt });
         });
     }
 }

@@ -19,9 +19,13 @@ public static class InfrastructureConfiguration
         services.AddScoped<IFazendaRepository, FazendaRepository>();
         services.AddScoped<ITalhaoRepository, TalhaoRepository>();
         services.AddScoped<ISensorRepository, SensorRepository>();
+        services.AddScoped<IOutboxRepository, OutboxRepository>();
 
-        // Event Publisher
-        services.AddScoped<IEventPublisher, EventPublisher>();
+        // Event Publisher with resilience (circuit breaker + outbox)
+        services.AddScoped<IEventPublisher, ResilientEventPublisher>();
+
+        // Outbox Processor Background Service
+        services.AddHostedService<OutboxProcessorService>();
 
         // MassTransit + RabbitMQ
         services.AddMassTransit(x =>
@@ -45,11 +49,33 @@ public static class InfrastructureConfiguration
                         }
                     );
 
+                    // Retry policy com exponential backoff
+                    cfg.UseMessageRetry(r =>
+                    {
+                        r.Exponential(
+                            retryLimit: 5,
+                            minInterval: TimeSpan.FromSeconds(2),
+                            maxInterval: TimeSpan.FromMinutes(5),
+                            intervalDelta: TimeSpan.FromSeconds(2)
+                        );
+                    });
+
                     // Configurar fila para consumir eventos de status do worker-alerts
                     cfg.ReceiveEndpoint(
                         "status-changed-queue",
                         e =>
                         {
+                            // Dead Letter Queue configuration
+                            e.UseMessageRetry(r =>
+                            {
+                                r.Exponential(
+                                    retryLimit: 3,
+                                    minInterval: TimeSpan.FromSeconds(1),
+                                    maxInterval: TimeSpan.FromMinutes(1),
+                                    intervalDelta: TimeSpan.FromSeconds(1)
+                                );
+                            });
+
                             e.ConfigureConsumer<StatusChangedEventConsumer>(context);
                         }
                     );
@@ -59,6 +85,17 @@ public static class InfrastructureConfiguration
                         "produtor-sync-queue",
                         e =>
                         {
+                            // Dead Letter Queue configuration
+                            e.UseMessageRetry(r =>
+                            {
+                                r.Exponential(
+                                    retryLimit: 3,
+                                    minInterval: TimeSpan.FromSeconds(1),
+                                    maxInterval: TimeSpan.FromMinutes(1),
+                                    intervalDelta: TimeSpan.FromSeconds(1)
+                                );
+                            });
+
                             e.ConfigureConsumer<ProdutorEventsConsumer>(context);
                         }
                     );

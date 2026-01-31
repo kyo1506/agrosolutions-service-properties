@@ -131,6 +131,7 @@ Produtor (CPF unique, cascades deletes)
 
 ### Outbound Events (Published by this service)
 - `SensorUpdatedEvent`: On sensor create/update → consumed by worker-alerts
+- `SensorDeletedEvent`: On sensor delete → consumed by worker-alerts for cleanup
 - `TalhaoCreatedEvent`: On talhao create → consumed by analytics services
 - `Produtor*Event`: Lifecycle events for sync
 
@@ -139,6 +140,21 @@ Produtor (CPF unique, cascades deletes)
 - Produtor events from identity service → syncs user data
 
 Consumers in `Infrastructure/Messaging/Consumers/`. Queues configured in `InfrastructureConfiguration.cs` with MassTransit.
+
+### Resilience Patterns
+
+**Outbox Pattern**: All events are saved to `OutboxMessages` table and processed by `OutboxProcessorService` background worker. Guarantees exactly-once delivery even if RabbitMQ is down.
+
+**Circuit Breaker**: `ResilientEventPublisher` uses Polly v8 circuit breaker (50% failure ratio, 30s break duration). When open, events are automatically saved to outbox.
+
+**Retry Policy**: MassTransit configured with exponential backoff (5 retries, 2s-5min intervals). Per-endpoint retries for consumers (3 retries, 1s-1min).
+
+**Dead Letter Queue**: Messages that fail after all retries are automatically routed to DLQ by RabbitMQ.
+
+**OpenTelemetry Metrics**: 
+- `events.published` - Counter of successfully published events
+- `events.failed` - Counter of failed event publications
+- `events.publish.duration` - Histogram of publish latency in milliseconds
 
 ## Configuration
 
