@@ -7,7 +7,7 @@ using Microsoft.Extensions.Logging;
 namespace AgroSolutions.Properties.Infrastructure.Messaging.Consumers;
 
 /// <summary>
-/// Consumer para eventos de mudança de status vindos do worker-alerts
+/// Consumer MassTransit para eventos de mudança de status vindos do worker-alerts
 /// </summary>
 public class StatusChangedEventConsumer(
     ITalhaoRepository talhaoRepository,
@@ -19,26 +19,28 @@ public class StatusChangedEventConsumer(
         var message = context.Message;
 
         logger.LogInformation(
-            "Received StatusChangedEvent for Talhao {TalhaoId} with status {Status}",
+            "Processing StatusChangedEvent for Talhao {TalhaoId} with status {Status}",
             message.TalhaoId,
             message.Status
         );
 
-        try
+        var talhao = await talhaoRepository.GetByIdAsync(
+            message.TalhaoId,
+            context.CancellationToken
+        );
+        if (talhao == null)
         {
-            var talhao = await talhaoRepository.GetByIdAsync(message.TalhaoId);
-            if (talhao == null)
-            {
-                logger.LogWarning("Talhao {TalhaoId} not found", message.TalhaoId);
-                return;
-            }
+            logger.LogWarning("Talhao {TalhaoId} not found", message.TalhaoId);
+            return;
+        }
 
-            // Atualizar status do talhão
-            talhao.Status = Enum.Parse<TalhaoStatus>(message.Status);
+        if (Enum.TryParse<TalhaoStatus>(message.Status, out var status))
+        {
+            talhao.Status = status;
             talhao.Observacoes =
                 $"{message.Motivo} (atualizado em {message.Timestamp:yyyy-MM-dd HH:mm:ss})";
 
-            await talhaoRepository.UpdateAsync(talhao);
+            await talhaoRepository.UpdateAsync(talhao, context.CancellationToken);
 
             logger.LogInformation(
                 "Talhao {TalhaoId} status updated to {Status}",
@@ -46,14 +48,13 @@ public class StatusChangedEventConsumer(
                 message.Status
             );
         }
-        catch (Exception ex)
+        else
         {
-            logger.LogError(
-                ex,
-                "Error processing StatusChangedEvent for Talhao {TalhaoId}",
+            logger.LogWarning(
+                "Invalid status {Status} for Talhao {TalhaoId}",
+                message.Status,
                 message.TalhaoId
             );
-            throw;
         }
     }
 }

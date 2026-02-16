@@ -3,6 +3,8 @@ using AgroSolutions.Properties.Infrastructure.Data;
 using AgroSolutions.Properties.Infrastructure.Messaging;
 using AgroSolutions.Properties.Infrastructure.Messaging.Consumers;
 using AgroSolutions.Properties.Infrastructure.Repositories;
+using Amazon.SimpleNotificationService;
+using Amazon.SQS;
 using MassTransit;
 
 namespace AgroSolutions.Properties.Api.Configurations;
@@ -27,25 +29,28 @@ public static class InfrastructureConfiguration
         // Outbox Processor Background Service
         services.AddHostedService<OutboxProcessorService>();
 
-        // MassTransit + RabbitMQ
+        // AWS Configuration
+        var awsConfig = configuration.GetSection("AWS");
+        var region = awsConfig["Region"] ?? "sa-east-1";
+
+        // MassTransit + AWS SQS/SNS
         services.AddMassTransit(x =>
         {
-            // Consumers
+            // Register Consumers
             x.AddConsumer<StatusChangedEventConsumer>();
-            x.AddConsumer<ProdutorEventsConsumer>();
+            x.AddConsumer<ProdutorCreatedEventConsumer>();
+            x.AddConsumer<ProdutorUpdatedEventConsumer>();
+            x.AddConsumer<ProdutorDeletedEventConsumer>();
 
-            x.UsingRabbitMq(
+            x.UsingAmazonSqs(
                 (context, cfg) =>
                 {
-                    var rabbitMqSettings = configuration.GetSection("RabbitMQ");
-
                     cfg.Host(
-                        rabbitMqSettings["Host"],
-                        "/",
+                        region,
                         h =>
                         {
-                            h.Username(rabbitMqSettings["Username"] ?? "guest");
-                            h.Password(rabbitMqSettings["Password"] ?? "guest");
+                            // Credentials are loaded from environment variables or IAM roles
+                            // AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, AWS_SESSION_TOKEN
                         }
                     );
 
@@ -60,12 +65,11 @@ public static class InfrastructureConfiguration
                         );
                     });
 
-                    // Configurar fila para consumir eventos de status do worker-alerts
+                    // Configure receive endpoints for consumers
                     cfg.ReceiveEndpoint(
-                        "status-changed-queue",
+                        "agrosolutions-status-changed-queue",
                         e =>
                         {
-                            // Dead Letter Queue configuration
                             e.UseMessageRetry(r =>
                             {
                                 r.Exponential(
@@ -80,12 +84,10 @@ public static class InfrastructureConfiguration
                         }
                     );
 
-                    // Configurar fila para consumir eventos de produtores do Identity
                     cfg.ReceiveEndpoint(
-                        "produtor-sync-queue",
+                        "agrosolutions-produtor-sync-queue",
                         e =>
                         {
-                            // Dead Letter Queue configuration
                             e.UseMessageRetry(r =>
                             {
                                 r.Exponential(
@@ -96,7 +98,9 @@ public static class InfrastructureConfiguration
                                 );
                             });
 
-                            e.ConfigureConsumer<ProdutorEventsConsumer>(context);
+                            e.ConfigureConsumer<ProdutorCreatedEventConsumer>(context);
+                            e.ConfigureConsumer<ProdutorUpdatedEventConsumer>(context);
+                            e.ConfigureConsumer<ProdutorDeletedEventConsumer>(context);
                         }
                     );
 

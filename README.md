@@ -56,7 +56,7 @@ Produtor (CPF, Nome, Contato)
 - **C# 12** - Linguagem (Primary Constructors)
 - **Entity Framework Core 10** - ORM
 - **PostgreSQL** - Banco de dados relacional
-- **MassTransit + RabbitMQ** - Mensageria assíncrona
+- **MassTransit + AWS SQS/SNS** - Mensageria assíncrona
 - **MediatR** - CQRS pattern
 - **FluentValidation** - Validações
 - **AutoMapper** - Mapeamento de objetos
@@ -111,11 +111,38 @@ ConnectionStrings__DefaultConnection=Host=postgres;Database=agrosolutions_proper
 Jwt__Authority=http://keycloak:8080/realms/agrosolutions
 Jwt__Audience=agrosolutions-api
 
-# RabbitMQ
-RabbitMQ__Host=rabbitmq
-RabbitMQ__Username=guest
-RabbitMQ__Password=guest
+# AWS Configuration
+AWS__Region=sa-east-1
+AWS__SQS__Queues__StatusChangedQueue=agrosolutions-status-changed-queue
+AWS__SQS__Queues__ProutorSyncQueue=agrosolutions-produtor-sync-queue
+AWS__SNS__Topics__PropertiesEventsTopic=arn:aws:sns:sa-east-1:405114419969:agrosolutions-property-events
 ```
+
+### Credenciais AWS
+
+Para conectar às filas SQS e tópicos SNS reais, configure suas credenciais AWS:
+
+#### Opção 1: Arquivo .env (recomendado para desenvolvimento)
+
+```bash
+# Copiar o exemplo
+cp .env.example .env
+
+# Editar com suas credenciais
+AWS_ACCESS_KEY_ID=sua-access-key
+AWS_SECRET_ACCESS_KEY=sua-secret-key
+AWS_SESSION_TOKEN=seu-session-token  # opcional
+```
+
+#### Opção 2: Variáveis de ambiente do sistema
+
+```bash
+export AWS_ACCESS_KEY_ID=sua-access-key
+export AWS_SECRET_ACCESS_KEY=sua-secret-key
+export AWS_SESSION_TOKEN=seu-session-token  # opcional
+```
+
+⚠️ **Nunca commite o arquivo `.env` com credenciais reais!** O `.env.example` deve conter apenas placeholders.
 
 ## 🐳 Docker
 
@@ -131,7 +158,7 @@ docker build -t agrosolutions/properties-service:latest .
 docker-compose up -d
 ```
 
-O serviço estará disponível em `http://localhost:5001`
+O serviço estará disponível em `http://localhost:5002`
 
 ## 📊 Endpoints Principais
 

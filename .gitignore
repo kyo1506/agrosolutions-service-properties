@@ -143,3 +143,9 @@ ehthumbs_vista.db
 
 # macOS
 .DS_Store
+
+### Environment Variables ###
+# Ignorar arquivos com credenciais
+.env
+.env.local
+.env.*.local

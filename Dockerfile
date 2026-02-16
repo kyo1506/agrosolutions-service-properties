@@ -9,16 +9,13 @@ ARG REVISION=dev
 
 WORKDIR /src
 
-# Copiar solution e projetos
-COPY *.sln .
-COPY src/ ./src/
+# Copiar todos os arquivos do projeto
+COPY . .
 
-# Restore e Build
-RUN dotnet restore "AgroSolutions.Properties.sln" && \
-    dotnet publish src/AgroSolutions.Properties.Api/AgroSolutions.Properties.Api.csproj \
-    -c Release \
-    -o /app/publish \
-    --no-restore
+# Restore, Build e Publish em etapas separadas
+RUN dotnet restore src/AgroSolutions.Properties.Api/AgroSolutions.Properties.Api.csproj
+RUN dotnet build src/AgroSolutions.Properties.Api/AgroSolutions.Properties.Api.csproj -c Release --no-restore
+RUN dotnet publish src/AgroSolutions.Properties.Api/AgroSolutions.Properties.Api.csproj -c Release -o /app/publish --no-build
 
 # Runtime stage
 FROM mcr.microsoft.com/dotnet/aspnet:${DOTNET_VERSION}-alpine AS final
@@ -36,6 +33,7 @@ RUN apk add --no-cache \
     icu-libs \
     ca-certificates \
     tzdata \
+    krb5-libs \
     && update-ca-certificates
 
 # Criar usuário não-root

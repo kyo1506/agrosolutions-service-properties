@@ -2,7 +2,7 @@
 
 ## Architecture Overview
 
-This is a **CQRS Write Side** microservice implementing Clean Architecture for managing agricultural properties (Produtores → Fazendas → Talhões → Sensores hierarchy). Uses .NET 10, PostgreSQL with strong ACID guarantees, and publishes domain events via MassTransit/RabbitMQ.
+This is a **CQRS Write Side** microservice implementing Clean Architecture for managing agricultural properties (Produtores → Fazendas → Talhões → Sensores hierarchy). Uses .NET 10, PostgreSQL with strong ACID guarantees, and publishes domain events via MassTransit/AWS SQS and SNS.
 
 ### Layer Responsibilities
 - **Domain**: Entities (`Produtor`, `Fazenda`, `Talhao`, `Sensor`) inherit from `BaseEntity` (Id, CreatedAt, UpdatedAt, IsActive). Events live here.
@@ -65,7 +65,7 @@ var @event = new SensorUpdatedEvent
 };
 await eventPublisher.PublishAsync(@event);
 ```
-Events are in `Domain/Events/`. MassTransit publishes to RabbitMQ topic exchanges automatically.
+Events are in `Domain/Events/`. MassTransit publishes to AWS SNS topics automatically.
 
 ### EF Core Configuration
 Fluent API configurations in `PropertiesDbContext.OnModelCreating()`:
@@ -104,14 +104,14 @@ dotnet build AgroSolutions.Properties.sln
 cd src/AgroSolutions.Properties.Api
 dotnet run
 
-# Docker Compose (includes PostgreSQL, RabbitMQ, Keycloak)
+# Docker Compose (includes PostgreSQL, Keycloak)
 docker-compose up -d
 ```
 
 ### Common Build Errors
 1. **CS1503 AutoMapper error**: Use `AddAutoMapper(typeof(Profile).Assembly)` not lambda config
 2. **Missing migration**: Add via `dotnet ef migrations add <Name> -p Infrastructure -s Api`
-3. **RabbitMQ connection**: Ensure `RabbitMQ__Host` env var matches docker-compose service name
+3. **AWS configuration**: Ensure AWS credentials and region are configured via environment variables or AWS SDK config
 
 ### Testing
 Tests in `tests/AgroSolutions.Properties.Tests/`. Structure mirrors `src/` folders.
@@ -143,13 +143,13 @@ Consumers in `Infrastructure/Messaging/Consumers/`. Queues configured in `Infras
 
 ### Resilience Patterns
 
-**Outbox Pattern**: All events are saved to `OutboxMessages` table and processed by `OutboxProcessorService` background worker. Guarantees exactly-once delivery even if RabbitMQ is down.
+**Outbox Pattern**: All events are saved to `OutboxMessages` table and processed by `OutboxProcessorService` background worker. Guarantees exactly-once delivery even if AWS SQS/SNS is temporarily unavailable.
 
 **Circuit Breaker**: `ResilientEventPublisher` uses Polly v8 circuit breaker (50% failure ratio, 30s break duration). When open, events are automatically saved to outbox.
 
 **Retry Policy**: MassTransit configured with exponential backoff (5 retries, 2s-5min intervals). Per-endpoint retries for consumers (3 retries, 1s-1min).
 
-**Dead Letter Queue**: Messages that fail after all retries are automatically routed to DLQ by RabbitMQ.
+**Dead Letter Queue**: Messages that fail after all retries are automatically routed to DLQ by AWS SQS.
 
 **OpenTelemetry Metrics**: 
 - `events.published` - Counter of successfully published events
@@ -161,7 +161,9 @@ Consumers in `Infrastructure/Messaging/Consumers/`. Queues configured in `Infras
 Key `appsettings.json` sections:
 - `ConnectionStrings:DefaultConnection`: PostgreSQL connection
 - `Jwt:Authority` / `Jwt:Audience`: Keycloak realm URL
-- `RabbitMQ:Host/Username/Password`: Message broker config
+- `AWS:Region`: AWS region (e.g., us-east-1)
+- `AWS:SQS:Queues`: SQS queue URLs for message consumption
+- `AWS:SNS:Topics`: SNS topic ARNs for event publishing
 
 Environment-specific overrides: `appsettings.{Environment}.json`
 
@@ -182,6 +184,26 @@ Environment-specific overrides: `appsettings.{Environment}.json`
 ## Security & Observability
 
 - All endpoints require `[Authorize]` except health checks
+- **Rate Limiting**: Enabled by default with fixed window algorithm
+  - **X-Client-Id header**: Used to identify clients for rate limiting. If not provided, falls back to IP address
+  - Default: 100 requests/minute per client
+  - Public endpoints: 50 requests/minute
+  - Authenticated endpoints: 200 requests/minute
+  - Disable in Development: `RateLimiting:EnableRateLimiting = false`
 - `CorrelationIdMiddleware` injects X-Correlation-ID for distributed tracing
 - Serilog structured logging: `logger.LogError(ex, "Message with {Property}", value)`
 - OpenTelemetry metrics/tracing configured in `ObservabilityConfiguration.cs`
+
+### Rate Limiting Example
+
+```bash
+# With Client ID header (recommended)
+curl -H "X-Client-Id: mobile-app-v1" http://localhost:5001/v1/produtores
+
+# Without header (uses IP address as identifier)
+curl http://localhost:5001/v1/produtores
+
+# Response when rate limit exceeded (429 Too Many Requests)
+# Headers: Retry-After: 60
+# Body: "Rate limit exceeded. Retry after 60 seconds."
+```

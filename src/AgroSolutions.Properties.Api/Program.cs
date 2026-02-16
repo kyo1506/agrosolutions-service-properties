@@ -20,6 +20,7 @@ builder.Services.AddInfrastructureServices(builder.Configuration);
 builder.Services.AddAuthenticationConfiguration(builder.Configuration);
 builder.Services.AddApiDocumentation();
 builder.Services.AddHealthChecksConfiguration(builder.Configuration);
+builder.Services.AddRateLimitingConfiguration(builder.Configuration);
 
 // API Versioning
 builder
@@ -61,6 +62,13 @@ app.UseSerilogRequestLogging();
 app.UseApiDocumentation();
 
 app.UseCors("AllowAll");
+
+// Rate Limiter (apenas se habilitado)
+var rateLimitingEnabled = builder.Configuration.GetValue("RateLimiting:EnableRateLimiting", true);
+if (rateLimitingEnabled)
+{
+    app.UseRateLimiter();
+}
 
 app.UseAuthentication();
 app.UseAuthorization();
