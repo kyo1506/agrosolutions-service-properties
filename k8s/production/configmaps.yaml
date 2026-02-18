@@ -1,0 +1,61 @@
+---
+# Properties API ConfigMap
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: properties-api-config
+  namespace: agrosolutions-properties
+data:
+  ASPNETCORE_ENVIRONMENT: "Production"
+  ASPNETCORE_URLS: "http://*:8080"
+  AllowedHosts: "*"
+  
+  # JWT Configuration (valida tokens do Keycloak via Gateway)
+  Jwt__Authority: "http://keycloak-service.agrosolutions-identity:8080/realms/agrosolutions"
+  Jwt__Audience: "agrosolutions-api"
+  Jwt__ValidateIssuer: "true"
+  Jwt__ValidateAudience: "true"
+  Jwt__ValidateLifetime: "true"
+  
+  # Rate Limiting
+  RateLimiting__EnableRateLimiting: "true"
+  RateLimiting__PermitLimit: "100"
+  RateLimiting__Window: "60"
+  RateLimiting__QueueLimit: "10"
+
+  # OpenTelemetry Configuration
+  OTEL_EXPORTER_OTLP_ENDPOINT: "http://otel-collector-service.agrosolutions-observability:4317"
+  OTEL_EXPORTER_OTLP_PROTOCOL: "grpc"
+  OTEL_SERVICE_NAME: "agrosolutions-properties-api"
+  OTEL_RESOURCE_ATTRIBUTES: "deployment.environment=production,service.version=1.0.0"
+  OTEL_TRACES_EXPORTER: "otlp"
+  OTEL_METRICS_EXPORTER: "otlp"
+  OTEL_LOGS_EXPORTER: "otlp"
+
+  # AWS Configuration
+  AWS__Region: "sa-east-1"
+  
+  # AWS SNS Topics (Properties Service publica eventos)
+  AWS__SNS__Topics__SensorUpdated: "arn:aws:sns:sa-east-1:316295889438:agrosolutions-sensor-updated"
+  AWS__SNS__Topics__SensorDeleted: "arn:aws:sns:sa-east-1:316295889438:agrosolutions-sensor-deleted"
+  AWS__SNS__Topics__TalhaoCreated: "arn:aws:sns:sa-east-1:316295889438:agrosolutions-talhao-created"
+  AWS__SNS__Topics__ProdutorEvents: "arn:aws:sns:sa-east-1:316295889438:agrosolutions-produtor-events"
+  
+  # AWS SQS Queues (Properties Service consome eventos)
+  AWS__SQS__Queues__StatusChangedQueue: "https://sqs.sa-east-1.amazonaws.com/316295889438/agrosolutions-status-changed-queue"
+  AWS__SQS__Queues__ProdutorEventsQueue: "https://sqs.sa-east-1.amazonaws.com/316295889438/agrosolutions-produtor-events-queue"
+  
+  # Outbox Pattern
+  Outbox__ProcessorInterval: "30"
+  Outbox__BatchSize: "100"
+  Outbox__MaxRetries: "5"
+  
+  # Resilience (Polly Circuit Breaker)
+  Resilience__CircuitBreaker__FailureRatio: "0.5"
+  Resilience__CircuitBreaker__SamplingDuration: "30"
+  Resilience__CircuitBreaker__MinimumThroughput: "10"
+  Resilience__CircuitBreaker__BreakDuration: "30"
+  
+  # Health Checks
+  HealthChecks__Timeout: "10"
+  HealthChecks__DbCheckInterval: "30"

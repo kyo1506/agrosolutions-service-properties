@@ -1,0 +1,119 @@
+---
+# NetworkPolicy: Permite tráfego apenas de sources específicos
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: properties-api-network-policy
+  namespace: agrosolutions-properties
+spec:
+  podSelector:
+    matchLabels:
+      app: properties-api
+  policyTypes:
+  - Ingress
+  - Egress
+  ingress:
+  # Permite tráfego do API Gateway
+  - from:
+    - namespaceSelector:
+        matchLabels:
+          name: agrosolutions-gateway
+    ports:
+    - protocol: TCP
+      port: 8080
+  # Permite health checks do load balancer
+  - from:
+    - namespaceSelector: {}
+    ports:
+    - protocol: TCP
+      port: 8080
+  # Permite Prometheus scraping
+  - from:
+    - namespaceSelector:
+        matchLabels:
+          name: agrosolutions-observability
+    ports:
+    - protocol: TCP
+      port: 8080
+  egress:
+  # Permite acesso ao PostgreSQL
+  - to:
+    - podSelector:
+        matchLabels:
+          app: properties-db
+    ports:
+    - protocol: TCP
+      port: 5432
+  # Permite acesso ao Keycloak (para validação de tokens)
+  - to:
+    - namespaceSelector:
+        matchLabels:
+          name: agrosolutions-identity
+      podSelector:
+        matchLabels:
+          app: keycloak
+    ports:
+    - protocol: TCP
+      port: 8080
+  # Permite acesso externo (AWS SQS/SNS, DNS, etc)
+  - to:
+    - namespaceSelector: {}
+    ports:
+    - protocol: TCP
+      port: 443
+    - protocol: TCP
+      port: 53
+    - protocol: UDP
+      port: 53
+
+---
+# PodDisruptionBudget: Garante disponibilidade durante updates
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: properties-api-pdb
+  namespace: agrosolutions-properties
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: properties-api
+
+---
+# ResourceQuota: Limita recursos do namespace
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: properties-quota
+  namespace: agrosolutions-properties
+spec:
+  hard:
+    requests.cpu: "10"
+    requests.memory: "20Gi"
+    limits.cpu: "20"
+    limits.memory: "40Gi"
+    persistentvolumeclaims: "5"
+    services.loadbalancers: "2"
+
+---
+# LimitRange: Define limites padrão para pods sem resource requests/limits
+apiVersion: v1
+kind: LimitRange
+metadata:
+  name: properties-limit-range
+  namespace: agrosolutions-properties
+spec:
+  limits:
+  - max:
+      cpu: "4000m"
+      memory: "8Gi"
+    min:
+      cpu: "100m"
+      memory: "128Mi"
+    default:
+      cpu: "500m"
+      memory: "512Mi"
+    defaultRequest:
+      cpu: "250m"
+      memory: "256Mi"
+    type: Container

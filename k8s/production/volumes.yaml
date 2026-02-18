@@ -1,0 +1,14 @@
+---
+# Properties Database PersistentVolumeClaim
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: properties-db-pvc
+  namespace: agrosolutions-properties
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: ebs-sc
+  resources:
+    requests:
+      storage: 20Gi

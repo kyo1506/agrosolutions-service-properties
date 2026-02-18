@@ -1,0 +1,98 @@
+---
+# Properties Database Deployment
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: properties-db
+  namespace: agrosolutions-properties
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: properties-db
+  template:
+    metadata:
+      labels:
+        app: properties-db
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "9187"
+        prometheus.io/path: "/metrics"
+    spec:
+      containers:
+      # PostgreSQL Database
+      - name: postgres
+        image: postgres:17-alpine
+        ports:
+        - containerPort: 5432
+          name: postgres
+        env:
+        - name: PGDATA
+          value: "/var/lib/postgresql/data/pgdata"
+        - name: POSTGRES_DB
+          value: "agrosolutions_properties"
+        - name: POSTGRES_USER
+          valueFrom:
+            secretKeyRef:
+              name: database-secrets
+              key: postgres-user
+        - name: POSTGRES_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: database-secrets
+              key: postgres-password
+        volumeMounts:
+        - name: properties-db-storage
+          mountPath: /var/lib/postgresql/data
+        resources:
+          requests:
+            memory: "512Mi"
+            cpu: "500m"
+          limits:
+            memory: "2Gi"
+            cpu: "2000m"
+        readinessProbe:
+          exec:
+            command:
+            - sh
+            - -c
+            - pg_isready -U ${POSTGRES_USER}
+          initialDelaySeconds: 10
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+        livenessProbe:
+          exec:
+            command:
+            - sh
+            - -c
+            - pg_isready -U ${POSTGRES_USER}
+          initialDelaySeconds: 30
+          periodSeconds: 30
+          timeoutSeconds: 10
+          failureThreshold: 5
+      
+      # Postgres Exporter (métricas para Prometheus)
+      - name: postgres-exporter
+        image: prometheuscommunity/postgres-exporter:latest
+        ports:
+        - containerPort: 9187
+          name: metrics
+        env:
+        - name: DATA_SOURCE_NAME
+          valueFrom:
+            secretKeyRef:
+              name: database-secrets
+              key: postgres-exporter-dsn
+        resources:
+          requests:
+            memory: "64Mi"
+            cpu: "50m"
+          limits:
+            memory: "128Mi"
+            cpu: "100m"
+      
+      volumes:
+      - name: properties-db-storage
+        persistentVolumeClaim:
+          claimName: properties-db-pvc

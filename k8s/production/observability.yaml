@@ -1,0 +1,148 @@
+---
+# ServiceMonitor para Prometheus scraping da Properties API
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: properties-api-monitor
+  namespace: agrosolutions-properties
+  labels:
+    app: properties-api
+    prometheus: kube-prometheus
+spec:
+  selector:
+    matchLabels:
+      app: properties-api
+  endpoints:
+  - port: http
+    path: /metrics
+    interval: 30s
+    scrapeTimeout: 10s
+
+---
+# ServiceMonitor para Prometheus scraping do PostgreSQL
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: properties-db-monitor
+  namespace: agrosolutions-properties
+  labels:
+    app: properties-db
+    prometheus: kube-prometheus
+spec:
+  selector:
+    matchLabels:
+      app: properties-db
+  endpoints:
+  - port: metrics
+    path: /metrics
+    interval: 30s
+    scrapeTimeout: 10s
+
+---
+# PrometheusRule para alertas críticos
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: properties-api-alerts
+  namespace: agrosolutions-properties
+  labels:
+    prometheus: kube-prometheus
+    role: alert-rules
+spec:
+  groups:
+  - name: properties-api
+    interval: 30s
+    rules:
+    # Alta latência de requisições
+    - alert: PropertiesAPIHighLatency
+      expr: |
+        histogram_quantile(0.95, 
+          sum(rate(http_server_duration_ms_bucket{service="agrosolutions-properties-api"}[5m])) by (le)
+        ) > 1000
+      for: 5m
+      labels:
+        severity: warning
+        service: properties-api
+      annotations:
+        summary: "Alta latência detectada na Properties API"
+        description: "P95 da latência está acima de 1000ms por mais de 5 minutos"
+    
+    # Taxa de erro alta
+    - alert: PropertiesAPIHighErrorRate
+      expr: |
+        sum(rate(http_server_requests_total{service="agrosolutions-properties-api",status=~"5.."}[5m])) 
+        / 
+        sum(rate(http_server_requests_total{service="agrosolutions-properties-api"}[5m])) 
+        > 0.05
+      for: 5m
+      labels:
+        severity: critical
+        service: properties-api
+      annotations:
+        summary: "Taxa de erro alta na Properties API"
+        description: "Mais de 5% das requisições estão falhando por mais de 5 minutos"
+    
+    # Pod não ready
+    - alert: PropertiesAPIPodNotReady
+      expr: |
+        kube_pod_status_ready{namespace="agrosolutions-properties",pod=~"properties-api-.*",condition="true"} == 0
+      for: 5m
+      labels:
+        severity: warning
+        service: properties-api
+      annotations:
+        summary: "Pod da Properties API não está ready"
+        description: "Pod {{ $labels.pod }} não está ready por mais de 5 minutos"
+    
+    # Database connection issues
+    - alert: PropertiesDatabaseConnectionIssues
+      expr: |
+        sum(rate(properties_db_connection_errors_total[5m])) > 0.1
+      for: 5m
+      labels:
+        severity: critical
+        service: properties-db
+      annotations:
+        summary: "Problemas de conexão com o banco de dados"
+        description: "Alta taxa de erros de conexão com PostgreSQL"
+    
+    # Outbox messages stuck
+    - alert: PropertiesOutboxMessagesStuck
+      expr: |
+        properties_outbox_pending_messages > 1000
+      for: 10m
+      labels:
+        severity: warning
+        service: properties-api
+      annotations:
+        summary: "Mensagens acumuladas no Outbox"
+        description: "Há {{ $value }} mensagens pendentes no Outbox por mais de 10 minutos"
+    
+    # HPA maxed out
+    - alert: PropertiesAPIHPAMaxedOut
+      expr: |
+        kube_horizontalpodautoscaler_status_current_replicas{namespace="agrosolutions-properties"} 
+        >= 
+        kube_horizontalpodautoscaler_spec_max_replicas{namespace="agrosolutions-properties"}
+      for: 15m
+      labels:
+        severity: warning
+        service: properties-api
+      annotations:
+        summary: "HPA atingiu o máximo de réplicas"
+        description: "HPA está no limite máximo há 15 minutos. Considere aumentar maxReplicas."
+    
+    # Database storage filling up
+    - alert: PropertiesDatabaseStorageFilling
+      expr: |
+        (kubelet_volume_stats_used_bytes{namespace="agrosolutions-properties",persistentvolumeclaim="properties-db-pvc"} 
+        / 
+        kubelet_volume_stats_capacity_bytes{namespace="agrosolutions-properties",persistentvolumeclaim="properties-db-pvc"}) 
+        > 0.8
+      for: 10m
+      labels:
+        severity: warning
+        service: properties-db
+      annotations:
+        summary: "Armazenamento do banco de dados  enchendo"
+        description: "Volume do PostgreSQL está com {{ $value | humanizePercentage }} de uso"
