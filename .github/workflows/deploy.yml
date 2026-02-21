@@ -99,8 +99,18 @@ jobs:
 
     - name: Apply API Deployment
       run: |
-        kubectl apply -f k8s/production/deployment.yaml
-        kubectl rollout status deployment/properties-api -n ${{ env.NAMESPACE }} --timeout=5m
+        APPLY_OUTPUT=$(kubectl apply -f k8s/production/deployment.yaml)
+        echo "$APPLY_OUTPUT"
+
+        if echo "$APPLY_OUTPUT" | grep -q "unchanged"; then
+          echo "Deployment unchanged. Validating pod readiness..."
+          kubectl wait --for=condition=ready pod \
+            -l app=properties-api \
+            -n ${{ env.NAMESPACE }} \
+            --timeout=300s
+        else
+          kubectl rollout status deployment/properties-api -n ${{ env.NAMESPACE }} --timeout=5m
+        fi
 
     - name: Apply HPA
       run: |
