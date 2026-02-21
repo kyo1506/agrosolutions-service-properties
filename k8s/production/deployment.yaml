@@ -6,12 +6,9 @@ metadata:
   name: properties-api
   namespace: agrosolutions-properties
 spec:
-  replicas: 2
+  replicas: 1
   strategy:
-    type: RollingUpdate
-    rollingUpdate:
-      maxUnavailable: 0
-      maxSurge: 1
+    type: Recreate
   selector:
     matchLabels:
       app: properties-api
@@ -24,6 +21,7 @@ spec:
         prometheus.io/port: "8080"
         prometheus.io/path: "/metrics"
     spec:
+      serviceAccountName: agrosolutions-properties-sa  # IRSA - IAM Role for Service Accounts
       terminationGracePeriodSeconds: 30
       containers:
       - name: properties-api
@@ -31,7 +29,6 @@ spec:
         imagePullPolicy: Always
         ports:
         - containerPort: 8080
-          name: http
         envFrom:
         - configMapRef:
             name: properties-api-config
@@ -43,25 +40,13 @@ spec:
               name: database-secrets
               key: connection-string
         
-        # AWS Credentials
-        - name: AWS__AccessKeyId
-          valueFrom:
-            secretKeyRef:
-              name: aws-credentials
-              key: access-key-id
-        - name: AWS__SecretAccessKey
-          valueFrom:
-            secretKeyRef:
-              name: aws-credentials
-              key: secret-access-key
-        
         resources:
           requests:
-            memory: "512Mi"
-            cpu: "500m"
+            memory: "256Mi"
+            cpu: "200m"
           limits:
-            memory: "2Gi"
-            cpu: "2000m"
+            memory: "1Gi"
+            cpu: "800m"
         
         readinessProbe:
           httpGet:

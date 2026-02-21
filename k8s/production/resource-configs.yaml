@@ -88,12 +88,11 @@ metadata:
   namespace: agrosolutions-properties
 spec:
   hard:
-    requests.cpu: "10"
-    requests.memory: "20Gi"
-    limits.cpu: "20"
-    limits.memory: "40Gi"
+    requests.cpu: "3"
+    requests.memory: "6Gi"
+    limits.cpu: "6"
+    limits.memory: "12Gi"
     persistentvolumeclaims: "5"
-    services.loadbalancers: "2"
 
 ---
 # LimitRange: Define limites padrão para pods sem resource requests/limits
@@ -105,15 +104,15 @@ metadata:
 spec:
   limits:
   - max:
-      cpu: "4000m"
-      memory: "8Gi"
+      cpu: "1"
+      memory: "1Gi"
     min:
+      cpu: "25m"
+      memory: "32Mi"
+    default:
+      cpu: "200m"
+      memory: "256Mi"
+    defaultRequest:
       cpu: "100m"
       memory: "128Mi"
-    default:
-      cpu: "500m"
-      memory: "512Mi"
-    defaultRequest:
-      cpu: "250m"
-      memory: "256Mi"
     type: Container

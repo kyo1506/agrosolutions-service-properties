@@ -221,6 +221,40 @@ dotnet test
 - **Health checks** integrados
 - **Correlation ID** para rastreamento
 
+## 🚀 CI/CD & Deployment
+
+### GitHub Actions Workflows
+
+**Build & Push** (`.github/workflows/build.yml`)
+- Trigger: Push em `main`/`develop` que modifique `src/**` ou `Dockerfile`
+- Testes automatizados
+- Build da imagem Docker
+- Scan de segurança com Trivy
+- Push para Amazon ECR
+
+**Deploy** (`.github/workflows/deploy.yml`)
+- Trigger: Push para `main` com mudanças em `k8s/**` ou manual
+- Deploy automatizado no EKS
+- Rollout verification
+- Health checks
+
+### Kubernetes Deployment
+
+O serviço roda em AWS EKS com configuração minimalista (free tier):
+
+**Recursos**:
+- API: 1 réplica, 256Mi RAM, 200m CPU (HPA 1-2)
+- Database: PostgreSQL 17-alpine, 256Mi RAM, 100m CPU
+- Storage: 10Gi EBS gp3
+
+**Segurança**:
+- IRSA (IAM Roles for Service Accounts) para AWS
+- ServiceAccount dedicado
+- Network Policies
+- Pod Security
+
+Ver documentação completa: [k8s/production/README.md](k8s/production/README.md)
+
 ## 🎯 Princípios SOLID
 
 - **Single Responsibility**: Cada classe tem uma única responsabilidade
@@ -229,13 +263,16 @@ dotnet test
 - **Interface Segregation**: Interfaces específicas e coesas
 - **Dependency Inversion**: Dependências via abstrações
 
-## 🚦 Próximos Passos
+## 🚦 Features
 
-1. Implementar endpoints de Fazendas e Talhões
-2. Adicionar paginação nas queries
-3. Implementar cache com Redis
-4. Adicionar testes de integração
-5. Configurar CI/CD pipeline
+- ✅ Clean Architecture com CQRS
+- ✅ Outbox Pattern para mensageria confiável
+- ✅ Circuit Breaker com Polly
+- ✅ Auto-scaling com HPA
+- ✅ CI/CD com GitHub Actions
+- ✅ Deployment em EKS
+- ✅ Observabilidade completa (logs, métricas, traces)
+- ✅ Health checks e readiness probes
 
 ## 📄 Licença
 

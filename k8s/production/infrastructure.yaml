@@ -1,0 +1,41 @@
+---
+# AWS IAM Role for Service Account (IRSA)
+# Permite pods assumirem IAM Roles sem credenciais explícitas
+# 
+# Configuração:
+# - ServiceAccount: agrosolutions-properties-sa
+# - IAM Role: AgroSolutionsPropertiesServiceRole
+# - Políticas: SNS, SQS (conforme necessário)
+# 
+# Para criar o IAM Role:
+# aws iam create-role --role-name AgroSolutionsPropertiesServiceRole \
+#   --assume-role-policy-document file://trust-policy.json
+# 
+# Trust policy deve incluir o OIDC provider do EKS:
+# {
+#   "Effect": "Allow",
+#   "Principal": {
+#     "Federated": "arn:aws:iam::316295889438:oidc-provider/oidc.eks.sa-east-1.amazonaws.com/id/YOUR_OIDC_ID"
+#   },
+#   "Action": "sts:AssumeRoleWithWebIdentity",
+#   "Condition": {
+#     "StringEquals": {
+#       "oidc.eks.sa-east-1.amazonaws.com/id/YOUR_OIDC_ID:sub": "system:serviceaccount:agrosolutions-properties:agrosolutions-properties-sa"
+#     }
+#   }
+# }
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: agrosolutions-properties-sa
+  namespace: agrosolutions-properties
+  annotations:
+    eks.amazonaws.com/role-arn: arn:aws:iam::316295889438:role/AgroSolutionsPropertiesServiceRole
+
+---
+# Note: Secrets devem ser criados via GitHub Actions ou GitOps
+# Nunca commitar secrets reais no repositório
+
+# Secrets necessários:
+# - database-secrets: postgres-user, postgres-password, connection-string, postgres-exporter-dsn
+# - aws-credentials: access-key-id, secret-access-key (apenas se não usar IRSA)
