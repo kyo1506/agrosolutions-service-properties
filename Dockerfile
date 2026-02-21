@@ -12,10 +12,11 @@ WORKDIR /src
 # Copiar todos os arquivos do projeto
 COPY . .
 
-# Restore, Build e Publish em etapas separadas
+# Restore e Publish (sem build separado para evitar problemas com glob patterns)
 RUN dotnet restore src/AgroSolutions.Properties.Api/AgroSolutions.Properties.Api.csproj
-RUN dotnet build src/AgroSolutions.Properties.Api/AgroSolutions.Properties.Api.csproj -c Release --no-restore
-RUN dotnet publish src/AgroSolutions.Properties.Api/AgroSolutions.Properties.Api.csproj -c Release -o /app/publish --no-build
+RUN dotnet publish src/AgroSolutions.Properties.Api/AgroSolutions.Properties.Api.csproj \
+    -c Release \
+    -o /app/publish
 
 # Runtime stage
 FROM mcr.microsoft.com/dotnet/aspnet:${DOTNET_VERSION}-alpine AS final
