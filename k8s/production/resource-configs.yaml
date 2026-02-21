@@ -17,7 +17,7 @@ spec:
   - from:
     - namespaceSelector:
         matchLabels:
-          name: agrosolutions-gateway
+          kubernetes.io/metadata.name: agrosolutions-gateway
     ports:
     - protocol: TCP
       port: 8080
@@ -31,7 +31,7 @@ spec:
   - from:
     - namespaceSelector:
         matchLabels:
-          name: agrosolutions-observability
+          kubernetes.io/metadata.name: agrosolutions-observability
     ports:
     - protocol: TCP
       port: 8080
@@ -48,7 +48,7 @@ spec:
   - to:
     - namespaceSelector:
         matchLabels:
-          name: agrosolutions-identity
+          kubernetes.io/metadata.name: agrosolutions-identity
       podSelector:
         matchLabels:
           app: keycloak
@@ -84,7 +84,7 @@ spec:
 apiVersion: v1
 kind: ResourceQuota
 metadata:
-  name: properties-quota
+  name: agrosolutions-properties-quota
   namespace: agrosolutions-properties
 spec:
   hard:
@@ -99,7 +99,7 @@ spec:
 apiVersion: v1
 kind: LimitRange
 metadata:
-  name: properties-limit-range
+  name: agrosolutions-properties-limits
   namespace: agrosolutions-properties
 spec:
   limits:
