@@ -36,10 +36,9 @@ data:
   AWS__Region: "sa-east-1"
   
   # AWS SNS Topics (Properties Service publica eventos)
-  AWS__SNS__Topics__SensorUpdated: "arn:aws:sns:sa-east-1:316295889438:agrosolutions-sensor-updated"
-  AWS__SNS__Topics__SensorDeleted: "arn:aws:sns:sa-east-1:316295889438:agrosolutions-sensor-deleted"
-  AWS__SNS__Topics__TalhaoCreated: "arn:aws:sns:sa-east-1:316295889438:agrosolutions-talhao-created"
-  AWS__SNS__Topics__ProdutorEvents: "arn:aws:sns:sa-east-1:316295889438:agrosolutions-produtor-events"
+  # MassTransit usa SetEntityName no InfrastructureConfiguration.cs para mapear tipos → tópicos
+  AWS__SNS__Topics__PropertiesEventsTopic: "arn:aws:sns:sa-east-1:316295889438:agrosolutions-property-events"
+  AWS__SNS__Topics__UserEventsTopic: "arn:aws:sns:sa-east-1:316295889438:agrosolutions-user-events"
   
   # AWS SQS Queues (Properties Service consome eventos)
   AWS__SQS__Queues__StatusChangedQueue: "https://sqs.sa-east-1.amazonaws.com/316295889438/agrosolutions-status-changed-queue"
