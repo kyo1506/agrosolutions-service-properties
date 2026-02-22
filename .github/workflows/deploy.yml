@@ -134,40 +134,52 @@ jobs:
 
     - name: Create secrets (if needed)
       run: |
-        if [ -z "$POSTGRES_PASSWORD" ]; then
-          echo "⚠️ POSTGRES_PASSWORD não definido no GitHub Secrets. Tentando usar database-secrets já existente no cluster..."
+        EFFECTIVE_PASSWORD=""
 
-          if kubectl get secret database-secrets -n ${{ env.NAMESPACE }} >/dev/null 2>&1; then
-            DECODED_CONN=$(kubectl get secret database-secrets -n ${{ env.NAMESPACE }} -o jsonpath='{.data.connection-string}' | base64 -d)
-            if echo "$DECODED_CONN" | grep -Eq 'Password=.+$'; then
-              echo "✅ Usando database-secrets existente com connection string válida"
-            else
-              echo "❌ database-secrets existe, mas connection-string está inválida (senha ausente)"
-              exit 1
-            fi
-          else
-            echo "❌ POSTGRES_PASSWORD não definido e database-secrets não existe no cluster"
-            echo "Defina o secret POSTGRES_PASSWORD no GitHub ou crie database-secrets previamente no namespace"
-            exit 1
+        # 1) Try to reuse current DB pod password (avoids drift with initialized PostgreSQL data)
+        DB_POD=$(kubectl get pod -n ${{ env.NAMESPACE }} -l app=properties-db -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || true)
+        if [ -n "$DB_POD" ]; then
+          EFFECTIVE_PASSWORD=$(kubectl exec -n ${{ env.NAMESPACE }} "$DB_POD" -- printenv POSTGRES_PASSWORD 2>/dev/null || true)
+          if [ -n "$EFFECTIVE_PASSWORD" ]; then
+            echo "✅ Senha obtida do pod do banco em execução"
           fi
+        fi
+
+        # 2) Fallback to existing secret password
+        if [ -z "$EFFECTIVE_PASSWORD" ] && kubectl get secret database-secrets -n ${{ env.NAMESPACE }} >/dev/null 2>&1; then
+          EFFECTIVE_PASSWORD=$(kubectl get secret database-secrets -n ${{ env.NAMESPACE }} -o jsonpath='{.data.postgres-password}' | base64 -d)
+          if [ -n "$EFFECTIVE_PASSWORD" ]; then
+            echo "✅ Senha obtida do secret existente"
+          fi
+        fi
+
+        # 3) Bootstrap fallback from GitHub secret (first deploy)
+        if [ -z "$EFFECTIVE_PASSWORD" ]; then
+          EFFECTIVE_PASSWORD="$POSTGRES_PASSWORD"
+        fi
+
+        if [ -z "$EFFECTIVE_PASSWORD" ]; then
+          echo "❌ Não foi possível determinar a senha do PostgreSQL"
+          echo "Defina POSTGRES_PASSWORD no GitHub Secrets ou crie database-secrets no cluster"
+          exit 1
+        fi
+
+        CONNECTION_STRING="Host=properties-db-service;Port=5432;Database=agrosolutions_properties;Username=postgres;Password=$EFFECTIVE_PASSWORD"
+
+        # Create/update database-secrets with effective password used by DB
+        kubectl create secret generic database-secrets \
+          --from-literal=postgres-user=postgres \
+          --from-literal=postgres-password="$EFFECTIVE_PASSWORD" \
+          --from-literal=connection-string="$CONNECTION_STRING" \
+          --from-literal=postgres-exporter-dsn="postgresql://postgres:$EFFECTIVE_PASSWORD@properties-db-service:5432/agrosolutions_properties?sslmode=disable" \
+          --namespace ${{ env.NAMESPACE }} --dry-run=client -o yaml | kubectl apply -f -
+
+        DECODED_CONN=$(kubectl get secret database-secrets -n ${{ env.NAMESPACE }} -o jsonpath='{.data.connection-string}' | base64 -d)
+        if echo "$DECODED_CONN" | grep -Eq 'Password=.+$'; then
+          echo "✅ Connection string gravada com senha"
         else
-          CONNECTION_STRING="Host=properties-db-service;Port=5432;Database=agrosolutions_properties;Username=postgres;Password=$POSTGRES_PASSWORD"
-
-          # Create/update database secrets
-          kubectl create secret generic database-secrets \
-            --from-literal=postgres-user=postgres \
-            --from-literal=postgres-password="$POSTGRES_PASSWORD" \
-            --from-literal=connection-string="$CONNECTION_STRING" \
-            --from-literal=postgres-exporter-dsn="postgresql://postgres:$POSTGRES_PASSWORD@properties-db-service:5432/agrosolutions_properties?sslmode=disable" \
-            --namespace ${{ env.NAMESPACE }} --dry-run=client -o yaml | kubectl apply -f -
-
-          DECODED_CONN=$(kubectl get secret database-secrets -n ${{ env.NAMESPACE }} -o jsonpath='{.data.connection-string}' | base64 -d)
-          if echo "$DECODED_CONN" | grep -Eq 'Password=.+$'; then
-            echo "✅ Connection string gravada com senha"
-          else
-            echo "❌ Connection string inválida (senha ausente)"
-            exit 1
-          fi
+          echo "❌ Connection string inválida (senha ausente)"
+          exit 1
         fi
       env:
         POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
@@ -202,11 +214,9 @@ jobs:
         if echo "$SET_IMAGE_OUTPUT" | grep -qi "updated"; then
           kubectl rollout status deployment/properties-api -n ${{ env.NAMESPACE }} --timeout=5m
         else
-          echo "Imagem já aplicada. Validando readiness dos pods..."
-          kubectl wait --for=condition=ready pod \
-            -l app=properties-api \
-            -n ${{ env.NAMESPACE }} \
-            --timeout=300s
+          echo "Imagem já aplicada. Reiniciando deployment para aplicar secrets/config atualizados..."
+          kubectl rollout restart deployment/properties-api -n ${{ env.NAMESPACE }}
+          kubectl rollout status deployment/properties-api -n ${{ env.NAMESPACE }} --timeout=5m
         fi
 
     - name: Apply HPA
