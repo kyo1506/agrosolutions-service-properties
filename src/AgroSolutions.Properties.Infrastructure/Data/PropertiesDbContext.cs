@@ -21,10 +21,7 @@ public class PropertiesDbContext(DbContextOptions<PropertiesDbContext> options) 
             entity.ToTable("Produtores");
             entity.HasKey(e => e.Id);
             entity.Property(e => e.Nome).IsRequired().HasMaxLength(200);
-            entity.Property(e => e.Cpf).IsRequired().HasMaxLength(11);
-            entity.HasIndex(e => e.Cpf).IsUnique();
             entity.Property(e => e.Email).HasMaxLength(200);
-            entity.Property(e => e.Telefone).HasMaxLength(20);
 
             entity
                 .HasMany(e => e.Fazendas)

@@ -13,7 +13,7 @@ public static class DependencyInjectionConfiguration
         );
 
         // AutoMapper
-        services.AddAutoMapper(cfg => cfg.AddProfile<MappingProfile>());
+        services.AddAutoMapper(typeof(MappingProfile).Assembly);
 
         // FluentValidation
         services.AddValidatorsFromAssembly(typeof(MappingProfile).Assembly);

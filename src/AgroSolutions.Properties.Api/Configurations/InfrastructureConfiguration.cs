@@ -38,9 +38,9 @@ public static class InfrastructureConfiguration
         {
             // Register Consumers
             x.AddConsumer<StatusChangedEventConsumer>();
-            x.AddConsumer<ProdutorCreatedEventConsumer>();
-            x.AddConsumer<ProdutorUpdatedEventConsumer>();
-            x.AddConsumer<ProdutorDeletedEventConsumer>();
+            x.AddConsumer<UserCreatedEventConsumer>();
+            x.AddConsumer<UserUpdatedEventConsumer>();
+            x.AddConsumer<UserDeletedEventConsumer>();
 
             x.UsingAmazonSqs(
                 (context, cfg) =>
@@ -98,9 +98,9 @@ public static class InfrastructureConfiguration
                                 );
                             });
 
-                            e.ConfigureConsumer<ProdutorCreatedEventConsumer>(context);
-                            e.ConfigureConsumer<ProdutorUpdatedEventConsumer>(context);
-                            e.ConfigureConsumer<ProdutorDeletedEventConsumer>(context);
+                            e.ConfigureConsumer<UserCreatedEventConsumer>(context);
+                            e.ConfigureConsumer<UserUpdatedEventConsumer>(context);
+                            e.ConfigureConsumer<UserDeletedEventConsumer>(context);
                         }
                     );
 

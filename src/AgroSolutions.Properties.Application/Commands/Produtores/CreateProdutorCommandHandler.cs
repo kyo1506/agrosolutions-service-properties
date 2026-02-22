@@ -16,13 +16,7 @@ public class CreateProdutorCommandHandler(IProdutorRepository repository)
         {
             Id = Guid.NewGuid(),
             Nome = request.Nome,
-            Cpf = request.Cpf,
             Email = request.Email,
-            Telefone = request.Telefone,
-            Endereco = request.Endereco,
-            Cidade = request.Cidade,
-            Estado = request.Estado,
-            Cep = request.Cep,
             CreatedAt = DateTime.UtcNow,
             IsActive = true,
         };

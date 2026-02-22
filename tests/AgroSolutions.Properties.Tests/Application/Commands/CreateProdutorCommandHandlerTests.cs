@@ -25,9 +25,7 @@ public class CreateProdutorCommandHandlerTests
         var command = new CreateProdutorCommand
         {
             Nome = "João Silva",
-            Cpf = "12345678901",
             Email = "joao@example.com",
-            Telefone = "11999999999",
         };
 
         _repositoryMock
@@ -43,7 +41,7 @@ public class CreateProdutorCommandHandlerTests
             r =>
                 r.AddAsync(
                     It.Is<Produtor>(p =>
-                        p.Nome == command.Nome && p.Cpf == command.Cpf && p.IsActive == true
+                        p.Nome == command.Nome && p.Email == command.Email && p.IsActive == true
                     ),
                     It.IsAny<CancellationToken>()
                 ),
