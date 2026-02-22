@@ -91,10 +91,15 @@ public static class InfrastructureConfiguration
                     });
 
                     // Configure receive endpoints for consumers
+                    // ConfigureConsumeTopology = false: as filas já estão configuradas manualmente
+                    // no AWS e subscritas nos tópicos SNS corretos. Evita que MassTransit tente
+                    // criar/subscrever tópicos SNS automaticamente no startup.
                     cfg.ReceiveEndpoint(
                         "agrosolutions-status-changed-queue",
                         e =>
                         {
+                            e.ConfigureConsumeTopology = false;
+
                             e.UseMessageRetry(r =>
                             {
                                 r.Exponential(
@@ -113,6 +118,8 @@ public static class InfrastructureConfiguration
                         "agrosolutions-produtor-sync-queue",
                         e =>
                         {
+                            e.ConfigureConsumeTopology = false;
+
                             e.UseMessageRetry(r =>
                             {
                                 r.Exponential(
