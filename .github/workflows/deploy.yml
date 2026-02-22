@@ -15,20 +15,47 @@ on:
     branches:
       - main
     paths:
+      - 'src/**'
       - 'k8s/production/**'
+      - 'Dockerfile'
+      - '.github/workflows/deploy.yml'
 
 env:
   AWS_REGION: sa-east-1
   EKS_CLUSTER_NAME: agrosolutions-eks-cluster
   ECR_REPOSITORY: agrosolutions-properties-api
   NAMESPACE: agrosolutions-properties
+  DOTNET_VERSION: "10.0.x"
 
 jobs:
-  deploy:
-    name: Deploy to Kubernetes
+  build-and-test:
+    name: Build and Test
     runs-on: ubuntu-latest
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Setup .NET SDK
+      uses: actions/setup-dotnet@v4
+      with:
+        dotnet-version: ${{ env.DOTNET_VERSION }}
+
+    - name: Restore dependencies
+      run: dotnet restore AgroSolutions.Properties.sln
+
+    - name: Build solution
+      run: dotnet build AgroSolutions.Properties.sln -c Release --no-restore
+
+    - name: Run tests
+      run: dotnet test AgroSolutions.Properties.sln --no-build --configuration Release --verbosity normal
+
+  deploy-to-eks:
+    name: Deploy to AWS EKS
+    runs-on: ubuntu-latest
+    needs: build-and-test
+    if: github.event_name == 'workflow_dispatch' || (github.ref == 'refs/heads/main' && github.event_name == 'push')
     environment: ${{ github.event.inputs.environment || 'production' }}
-    
+
     permissions:
       id-token: write   # necessário para OIDC
       contents: read
@@ -41,7 +68,45 @@ jobs:
       uses: aws-actions/configure-aws-credentials@v4
       with:
         role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME }}
+        role-session-name: GitHubActions-PropertiesDeploy-${{ github.run_id }}
         aws-region: ${{ env.AWS_REGION }}
+
+    - name: Verify AWS connection
+      run: |
+        echo "Verificando credenciais AWS..."
+        aws sts get-caller-identity
+        echo "Verificando cluster EKS..."
+        aws eks describe-cluster --name ${{ env.EKS_CLUSTER_NAME }} --region ${{ env.AWS_REGION }}
+
+    - name: Login to Amazon ECR
+      id: login-ecr
+      uses: aws-actions/amazon-ecr-login@v2
+
+    - name: Build, tag, and push Docker image
+      id: build-image
+      env:
+        ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+      run: |
+        BUILD_DATE=$(date -u +'%Y-%m-%dT%H:%M:%SZ')
+        REVISION=${GITHUB_SHA::8}
+        IMAGE_TAG=${GITHUB_SHA}
+        IMAGE=$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
+
+        echo "Building Docker image..."
+        docker build \
+          --build-arg BUILD_DATE=$BUILD_DATE \
+          --build-arg VERSION=1.0.0 \
+          --build-arg REVISION=$REVISION \
+          -t $IMAGE \
+          -t $ECR_REGISTRY/$ECR_REPOSITORY:latest \
+          .
+
+        echo "Pushing to ECR..."
+        docker push $IMAGE
+        docker push $ECR_REGISTRY/$ECR_REPOSITORY:latest
+
+        echo "image=$IMAGE" >> $GITHUB_OUTPUT
+        echo "✅ Image pushed successfully: $IMAGE"
 
     - name: Update kubeconfig
       run: |
@@ -53,6 +118,7 @@ jobs:
       run: |
         kubectl version --client
         kubectl cluster-info
+        kubectl get nodes
 
     - name: Create namespace (if not exists)
       run: |
@@ -99,17 +165,20 @@ jobs:
 
     - name: Apply API Deployment
       run: |
-        APPLY_OUTPUT=$(kubectl apply -f k8s/production/deployment.yaml)
-        echo "$APPLY_OUTPUT"
+        kubectl apply -f k8s/production/deployment.yaml
+        SET_IMAGE_OUTPUT=$(kubectl set image deployment/properties-api \
+          properties-api=${{ steps.build-image.outputs.image }} \
+          -n ${{ env.NAMESPACE }})
+        echo "$SET_IMAGE_OUTPUT"
 
-        if echo "$APPLY_OUTPUT" | grep -q "unchanged"; then
-          echo "Deployment unchanged. Validating pod readiness..."
+        if echo "$SET_IMAGE_OUTPUT" | grep -qi "updated"; then
+          kubectl rollout status deployment/properties-api -n ${{ env.NAMESPACE }} --timeout=5m
+        else
+          echo "Imagem já aplicada. Validando readiness dos pods..."
           kubectl wait --for=condition=ready pod \
             -l app=properties-api \
             -n ${{ env.NAMESPACE }} \
             --timeout=300s
-        else
-          kubectl rollout status deployment/properties-api -n ${{ env.NAMESPACE }} --timeout=5m
         fi
 
     - name: Apply HPA
@@ -155,7 +224,7 @@ jobs:
       run: |
         echo "✅ Deployment successful!" >> $GITHUB_STEP_SUMMARY
         echo "Environment: ${{ github.event.inputs.environment || 'production' }}" >> $GITHUB_STEP_SUMMARY
-        echo "Image: ${{ env.ECR_REPOSITORY }}:latest" >> $GITHUB_STEP_SUMMARY
+        echo "Image: ${{ steps.build-image.outputs.image }}" >> $GITHUB_STEP_SUMMARY
         echo "Namespace: ${{ env.NAMESPACE }}" >> $GITHUB_STEP_SUMMARY
 
     - name: Notify deployment failure
@@ -163,3 +232,7 @@ jobs:
       run: |
         echo "❌ Deployment failed!" >> $GITHUB_STEP_SUMMARY
         echo "Please check the logs above for details." >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "### Diagnostics" >> $GITHUB_STEP_SUMMARY
+        kubectl get pods -n ${{ env.NAMESPACE }} >> $GITHUB_STEP_SUMMARY || true
+        kubectl describe deployment properties-api -n ${{ env.NAMESPACE }} >> $GITHUB_STEP_SUMMARY || true
