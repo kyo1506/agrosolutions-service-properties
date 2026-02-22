@@ -1,6 +1,7 @@
 using AgroSolutions.Properties.Api.Configurations;
 using AgroSolutions.Properties.Api.Middlewares;
 using Asp.Versioning;
+using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using Serilog;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -77,8 +78,11 @@ app.MapControllers();
 
 // Health checks
 app.MapHealthChecks("/health");
-app.MapHealthChecks("/health/ready");
-app.MapHealthChecks("/health/live");
+app.MapHealthChecks(
+    "/health/ready",
+    new HealthCheckOptions { Predicate = check => check.Tags.Contains("ready") }
+);
+app.MapHealthChecks("/health/live", new HealthCheckOptions { Predicate = _ => false });
 
 app.Run();
 

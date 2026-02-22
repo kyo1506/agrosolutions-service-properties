@@ -14,10 +14,14 @@ public static class HealthChecksConfiguration
 
         services
             .AddHealthChecks()
-            .AddNpgSql(connectionString!, name: "postgresql", tags: new[] { "db", "postgresql" })
+            .AddNpgSql(
+                connectionString!,
+                name: "postgresql",
+                tags: new[] { "db", "postgresql", "ready" }
+            )
             .AddDbContextCheck<PropertiesDbContext>(
                 name: "dbcontext",
-                tags: new[] { "db", "context" }
+                tags: new[] { "db", "context", "ready" }
             );
 
         return services;
