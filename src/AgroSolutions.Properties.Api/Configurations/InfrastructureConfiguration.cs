@@ -1,3 +1,5 @@
+using AgroSolutions.Identity.Domain.Events;
+using AgroSolutions.Properties.Domain.Events;
 using AgroSolutions.Properties.Domain.Interfaces;
 using AgroSolutions.Properties.Infrastructure.Data;
 using AgroSolutions.Properties.Infrastructure.Messaging;
@@ -52,6 +54,29 @@ public static class InfrastructureConfiguration
                             // Credentials are loaded from environment variables or IAM roles
                             // AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, AWS_SESSION_TOKEN
                         }
+                    );
+
+                    // Mapear tipos de mensagem do Identity para o tópico SNS correto
+                    // Evita que MassTransit auto-crie tópicos baseados no namespace do tipo
+                    cfg.Message<UserCreatedEvent>(m =>
+                        m.SetEntityName("agrosolutions-user-events")
+                    );
+                    cfg.Message<UserUpdatedEvent>(m =>
+                        m.SetEntityName("agrosolutions-user-events")
+                    );
+                    cfg.Message<UserDeletedEvent>(m =>
+                        m.SetEntityName("agrosolutions-user-events")
+                    );
+
+                    // Mapear eventos de propriedades para o tópico SNS correto
+                    cfg.Message<SensorUpdatedEvent>(m =>
+                        m.SetEntityName("agrosolutions-property-events")
+                    );
+                    cfg.Message<SensorDeletedEvent>(m =>
+                        m.SetEntityName("agrosolutions-property-events")
+                    );
+                    cfg.Message<TalhaoCreatedEvent>(m =>
+                        m.SetEntityName("agrosolutions-property-events")
                     );
 
                     // Retry policy com exponential backoff
