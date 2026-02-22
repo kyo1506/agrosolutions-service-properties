@@ -83,8 +83,9 @@ public class OutboxProcessorService(
                     continue;
                 }
 
-                // Publicar o evento
-                await publishEndpoint.Publish(@event, cancellationToken);
+                // Publicar o evento usando o tipo correto para que o MassTransit
+                // respeite o SetEntityName (SNS topic name) configurado no topology
+                await publishEndpoint.Publish(@event, eventType, cancellationToken);
 
                 // Marcar como processado
                 await outboxRepository.MarkAsProcessedAsync(message.Id, cancellationToken);

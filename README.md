@@ -115,7 +115,7 @@ Jwt__Audience=agrosolutions-api
 AWS__Region=sa-east-1
 AWS__SQS__Queues__StatusChangedQueue=agrosolutions-status-changed-queue
 AWS__SQS__Queues__ProutorSyncQueue=agrosolutions-produtor-sync-queue
-AWS__SNS__Topics__PropertiesEventsTopic=arn:aws:sns:sa-east-1:405114419969:agrosolutions-property-events
+AWS__SNS__Topics__PropertiesEventsTopic=arn:aws:sns:sa-east-1:316295889438:agrosolutions-property-events
 ```
 
 ### Credenciais AWS
