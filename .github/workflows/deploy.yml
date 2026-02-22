@@ -204,9 +204,6 @@ jobs:
           echo "🔄 Aplicando HPA..."
           kubectl apply -f k8s/production/hpa.yaml
 
-          echo "🌐 Aplicando Ingress..."
-          kubectl apply -f k8s/production/ingress-aws.yaml
-
           echo "⚙️ Aplicando Resource Configs..."
           kubectl apply -f k8s/production/resource-configs.yaml
 
@@ -225,9 +222,6 @@ jobs:
           echo "Services:"
           kubectl get svc -n agrosolutions-properties
 
-          echo "Ingress:"
-          kubectl get ingress -n agrosolutions-properties
-
           # Aguardar rollout do deployment
           echo "⏳ Aguardando rollout da Properties API..."
           kubectl rollout status deployment/properties-api -n agrosolutions-properties --timeout=300s
@@ -241,32 +235,23 @@ jobs:
           echo "📈 Status do HPA:"
           kubectl get hpa -n agrosolutions-properties
 
-          # Teste de saúde
-          echo "🏥 Testando health endpoint..."
-          LOAD_BALANCER=$(kubectl get ingress properties-api-ingress -n agrosolutions-properties -o jsonpath='{.status.loadBalancer.ingress[0].hostname}' 2>/dev/null || echo "pending")
-
-          if [ "$LOAD_BALANCER" != "pending" ] && [ -n "$LOAD_BALANCER" ]; then
-            echo "Load Balancer: $LOAD_BALANCER"
-            echo "Aguardando propagação do ingress (30s)..."
-            sleep 30
-
-            # Testar endpoint com retry
-            for i in {1..5}; do
-              echo "Tentativa $i/5 - Testando health endpoint..."
-              if curl -f -H "Host: api.agrosolutions.com" "http://$LOAD_BALANCER/properties/health/ready" --connect-timeout 10 --max-time 30; then
-                echo "✅ Health check passou!"
+          # Teste de saúde interno via kubectl exec
+          echo "🏥 Testando health endpoint internamente..."
+          POD_NAME=$(kubectl get pod -l app=properties-api -n agrosolutions-properties -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || true)
+          if [ -n "$POD_NAME" ]; then
+            for i in {1..3}; do
+              echo "Tentativa $i/3 - Health check via pod..."
+              HEALTH_RESULT=$(kubectl exec -n agrosolutions-properties "$POD_NAME" -- wget -qO- http://localhost:8080/health/ready 2>/dev/null || true)
+              if [ -n "$HEALTH_RESULT" ]; then
+                echo "✅ Health check passou: $HEALTH_RESULT"
                 break
               else
-                echo "⚠️ Health check falhou, tentando novamente em 10s..."
+                echo "⚠️ Health check não respondeu, aguardando 10s..."
                 sleep 10
-              fi
-
-              if [ $i -eq 5 ]; then
-                echo "⚠️ Health check não passou após 5 tentativas (pode estar OK, ingress pode demorar a propagar)"
               fi
             done
           else
-            echo "⏳ Load Balancer ainda não provisionado, verifique manualmente após alguns minutos"
+            echo "⚠️ Pod não encontrado para health check interno"
           fi
 
           echo "🚀 Deploy concluído com sucesso!"
