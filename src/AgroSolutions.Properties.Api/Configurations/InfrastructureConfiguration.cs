@@ -128,8 +128,6 @@ public static class InfrastructureConfiguration
                             e.ConfigureConsumer<UserDeletedEventConsumer>(context);
                         }
                     );
-
-                    cfg.ConfigureEndpoints(context);
                 }
             );
         });
