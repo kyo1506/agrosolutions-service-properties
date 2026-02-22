@@ -1,30 +1,19 @@
-name: Deploy to EKS
+name: AgroSolutions Properties - CI/CD Pipeline
 
 on:
-  workflow_dispatch:
-    inputs:
-      environment:
-        description: 'Environment to deploy to'
-        required: true
-        default: 'production'
-        type: choice
-        options:
-          - production
-          - staging
   push:
     branches:
       - main
-    paths:
-      - 'src/**'
-      - 'k8s/production/**'
-      - 'Dockerfile'
-      - '.github/workflows/deploy.yml'
+      - develop
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
 
 env:
-  AWS_REGION: sa-east-1
-  EKS_CLUSTER_NAME: agrosolutions-eks-cluster
   ECR_REPOSITORY: agrosolutions-properties-api
-  NAMESPACE: agrosolutions-properties
+  EKS_CLUSTER_NAME: agrosolutions-eks-cluster
+  AWS_REGION: sa-east-1
   DOTNET_VERSION: "10.0.x"
 
 jobs:
@@ -32,245 +21,291 @@ jobs:
     name: Build and Test
     runs-on: ubuntu-latest
     steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
+      - name: Checkout repository
+        uses: actions/checkout@v4
 
-    - name: Setup .NET SDK
-      uses: actions/setup-dotnet@v4
-      with:
-        dotnet-version: ${{ env.DOTNET_VERSION }}
+      - name: Setup .NET SDK
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
 
-    - name: Restore dependencies
-      run: dotnet restore AgroSolutions.Properties.sln
+      - name: Restore dependencies
+        run: dotnet restore AgroSolutions.Properties.sln
 
-    - name: Build solution
-      run: dotnet build AgroSolutions.Properties.sln -c Release --no-restore
+      - name: Build solution
+        run: dotnet build AgroSolutions.Properties.sln -c Release --no-restore
 
-    - name: Run tests
-      run: dotnet test AgroSolutions.Properties.sln --no-build --configuration Release --verbosity normal
+      - name: Run tests
+        run: |
+          cd tests/AgroSolutions.Properties.Tests/
+          dotnet test --no-build --configuration Release --verbosity normal --logger "console;verbosity=detailed"
 
   deploy-to-eks:
     name: Deploy to AWS EKS
     runs-on: ubuntu-latest
     needs: build-and-test
-    if: github.event_name == 'workflow_dispatch' || (github.ref == 'refs/heads/main' && github.event_name == 'push')
-    environment: ${{ github.event.inputs.environment || 'production' }}
-
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
     permissions:
-      id-token: write   # necessário para OIDC
-      contents: read
-
+      id-token: write   # Required for OIDC
+      contents: read    # Required to checkout code
     steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
+      - name: Checkout repository
+        uses: actions/checkout@v4
 
-    - name: Configure AWS credentials
-      uses: aws-actions/configure-aws-credentials@v4
-      with:
-        role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME }}
-        role-session-name: GitHubActions-PropertiesDeploy-${{ github.run_id }}
-        aws-region: ${{ env.AWS_REGION }}
+      - name: Configure AWS credentials via OIDC
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME }}
+          role-session-name: GitHubActions-PropertiesDeploy-${{ github.run_id }}
+          aws-region: ${{ env.AWS_REGION }}
 
-    - name: Verify AWS connection
-      run: |
-        echo "Verificando credenciais AWS..."
-        aws sts get-caller-identity
-        echo "Verificando cluster EKS..."
-        aws eks describe-cluster --name ${{ env.EKS_CLUSTER_NAME }} --region ${{ env.AWS_REGION }}
+      - name: Verify AWS connection
+        run: |
+          echo "Verificando credenciais AWS..."
+          aws sts get-caller-identity
+          echo "Verificando cluster EKS..."
+          aws eks describe-cluster --name ${{ env.EKS_CLUSTER_NAME }} --region ${{ env.AWS_REGION }}
 
-    - name: Login to Amazon ECR
-      id: login-ecr
-      uses: aws-actions/amazon-ecr-login@v2
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
 
-    - name: Build, tag, and push Docker image
-      id: build-image
-      env:
-        ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
-      run: |
-        BUILD_DATE=$(date -u +'%Y-%m-%dT%H:%M:%SZ')
-        REVISION=${GITHUB_SHA::8}
-        IMAGE_TAG=${GITHUB_SHA}
-        IMAGE=$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
+      - name: Build, tag, and push Docker image
+        id: build-image
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          IMAGE_TAG: ${{ github.sha }}
+          BUILD_DATE: ${{ github.event.head_commit.timestamp }}
+          VERSION: "1.0.0"
+        run: |
+          echo "Building Docker image..."
+          docker build \
+            --build-arg BUILD_DATE=$BUILD_DATE \
+            --build-arg VERSION=$VERSION \
+            --build-arg REVISION=${{ github.sha }} \
+            -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG \
+            -t $ECR_REGISTRY/$ECR_REPOSITORY:latest \
+            .
 
-        echo "Building Docker image..."
-        docker build \
-          --build-arg BUILD_DATE=$BUILD_DATE \
-          --build-arg VERSION=1.0.0 \
-          --build-arg REVISION=$REVISION \
-          -t $IMAGE \
-          -t $ECR_REGISTRY/$ECR_REPOSITORY:latest \
-          .
+          echo "Pushing to ECR..."
+          docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
+          docker push $ECR_REGISTRY/$ECR_REPOSITORY:latest
 
-        echo "Pushing to ECR..."
-        docker push $IMAGE
-        docker push $ECR_REGISTRY/$ECR_REPOSITORY:latest
+          echo "image=$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG" >> $GITHUB_OUTPUT
+          echo "✅ Image pushed successfully: $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG"
 
-        echo "image=$IMAGE" >> $GITHUB_OUTPUT
-        echo "✅ Image pushed successfully: $IMAGE"
+      - name: Configure Kubectl for EKS
+        run: |
+          aws eks update-kubeconfig --name ${{ env.EKS_CLUSTER_NAME }} --region ${{ env.AWS_REGION }}
+          kubectl version --client
 
-    - name: Update kubeconfig
-      run: |
-        aws eks update-kubeconfig \
-          --name ${{ env.EKS_CLUSTER_NAME }} \
-          --region ${{ env.AWS_REGION }}
+      - name: Verify EKS connection
+        run: |
+          echo "Verificando conectividade com EKS..."
+          kubectl cluster-info
+          kubectl get nodes
+          echo "Namespaces existentes:"
+          kubectl get namespaces
 
-    - name: Verify kubectl connection
-      run: |
-        kubectl version --client
-        kubectl cluster-info
-        kubectl get nodes
+      - name: Deploy to EKS
+        env:
+          POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
+        run: |
+          echo "Imagem a ser deployada: ${{ steps.build-image.outputs.image }}"
 
-    - name: Create namespace (if not exists)
-      run: |
-        kubectl apply -f k8s/production/namespace.yaml
+          # Substituir placeholder da imagem no deployment
+          sed -i 's|316295889438.dkr.ecr.sa-east-1.amazonaws.com/agrosolutions-properties-api:latest|${{ steps.build-image.outputs.image }}|g' k8s/production/deployment.yaml
 
-    - name: Apply Infrastructure (ServiceAccount, IRSA)
-      run: |
-        kubectl apply -f k8s/production/infrastructure.yaml
+          echo "Verificando substituição da imagem:"
+          grep "image:" k8s/production/deployment.yaml | head -5
 
-    - name: Apply Resource Configs (Quotas, LimitRanges, PDB)
-      run: |
-        kubectl apply -f k8s/production/resource-configs.yaml
+          # Aplicar manifestos na ordem correta
+          echo "📦 Aplicando namespace..."
+          kubectl apply -f k8s/production/namespace.yaml
 
-    - name: Create secrets (if needed)
-      run: |
-        EFFECTIVE_PASSWORD=""
+          # Criar secrets APÓS namespace existir
+          echo "🔐 Criando/atualizando secrets do Kubernetes..."
 
-        # 1) Try to reuse current DB pod password (avoids drift with initialized PostgreSQL data)
-        DB_POD=$(kubectl get pod -n ${{ env.NAMESPACE }} -l app=properties-db -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || true)
-        if [ -n "$DB_POD" ]; then
-          EFFECTIVE_PASSWORD=$(kubectl exec -n ${{ env.NAMESPACE }} "$DB_POD" -- printenv POSTGRES_PASSWORD 2>/dev/null || true)
-          if [ -n "$EFFECTIVE_PASSWORD" ]; then
-            echo "✅ Senha obtida do pod do banco em execução"
+          # Determinar senha efetiva do PostgreSQL (evitar drift)
+          EFFECTIVE_PASSWORD=""
+
+          # 1) Tentar reutilizar a senha do pod do DB em execução
+          DB_POD=$(kubectl get pod -n agrosolutions-properties -l app=properties-db -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || true)
+          if [ -n "$DB_POD" ]; then
+            EFFECTIVE_PASSWORD=$(kubectl exec -n agrosolutions-properties "$DB_POD" -- printenv POSTGRES_PASSWORD 2>/dev/null || true)
+            if [ -n "$EFFECTIVE_PASSWORD" ]; then
+              echo "✅ Senha obtida do pod do banco em execução"
+            fi
           fi
-        fi
 
-        # 2) Fallback to existing secret password
-        if [ -z "$EFFECTIVE_PASSWORD" ] && kubectl get secret database-secrets -n ${{ env.NAMESPACE }} >/dev/null 2>&1; then
-          EFFECTIVE_PASSWORD=$(kubectl get secret database-secrets -n ${{ env.NAMESPACE }} -o jsonpath='{.data.postgres-password}' | base64 -d)
-          if [ -n "$EFFECTIVE_PASSWORD" ]; then
-            echo "✅ Senha obtida do secret existente"
+          # 2) Fallback: senha do secret existente no cluster
+          if [ -z "$EFFECTIVE_PASSWORD" ] && kubectl get secret database-secrets -n agrosolutions-properties >/dev/null 2>&1; then
+            EFFECTIVE_PASSWORD=$(kubectl get secret database-secrets -n agrosolutions-properties -o jsonpath='{.data.postgres-password}' | base64 -d)
+            if [ -n "$EFFECTIVE_PASSWORD" ]; then
+              echo "✅ Senha obtida do secret existente"
+            fi
           fi
-        fi
 
-        # 3) Bootstrap fallback from GitHub secret (first deploy)
-        if [ -z "$EFFECTIVE_PASSWORD" ]; then
-          EFFECTIVE_PASSWORD="$POSTGRES_PASSWORD"
-        fi
+          # 3) Bootstrap: GitHub secret (primeiro deploy)
+          if [ -z "$EFFECTIVE_PASSWORD" ]; then
+            EFFECTIVE_PASSWORD="$POSTGRES_PASSWORD"
+            if [ -n "$EFFECTIVE_PASSWORD" ]; then
+              echo "✅ Senha obtida do GitHub Secret (bootstrap)"
+            fi
+          fi
 
-        if [ -z "$EFFECTIVE_PASSWORD" ]; then
-          echo "❌ Não foi possível determinar a senha do PostgreSQL"
-          echo "Defina POSTGRES_PASSWORD no GitHub Secrets ou crie database-secrets no cluster"
-          exit 1
-        fi
+          if [ -z "$EFFECTIVE_PASSWORD" ]; then
+            echo "❌ Não foi possível determinar a senha do PostgreSQL"
+            echo "Defina POSTGRES_PASSWORD no GitHub Secrets ou crie database-secrets no cluster"
+            exit 1
+          fi
 
-        CONNECTION_STRING="Host=properties-db-service;Port=5432;Database=agrosolutions_properties;Username=postgres;Password=$EFFECTIVE_PASSWORD"
+          CONNECTION_STRING="Host=properties-db-service;Port=5432;Database=agrosolutions_properties;Username=postgres;Password=$EFFECTIVE_PASSWORD"
 
-        # Create/update database-secrets with effective password used by DB
-        kubectl create secret generic database-secrets \
-          --from-literal=postgres-user=postgres \
-          --from-literal=postgres-password="$EFFECTIVE_PASSWORD" \
-          --from-literal=connection-string="$CONNECTION_STRING" \
-          --from-literal=postgres-exporter-dsn="postgresql://postgres:$EFFECTIVE_PASSWORD@properties-db-service:5432/agrosolutions_properties?sslmode=disable" \
-          --namespace ${{ env.NAMESPACE }} --dry-run=client -o yaml | kubectl apply -f -
+          # Database Secrets
+          kubectl create secret generic database-secrets \
+            --from-literal=postgres-user=postgres \
+            --from-literal=postgres-password="$EFFECTIVE_PASSWORD" \
+            --from-literal=connection-string="$CONNECTION_STRING" \
+            --from-literal=postgres-exporter-dsn="postgresql://postgres:$EFFECTIVE_PASSWORD@properties-db-service:5432/agrosolutions_properties?sslmode=disable" \
+            -n agrosolutions-properties --dry-run=client -o yaml | kubectl apply -f -
 
-        DECODED_CONN=$(kubectl get secret database-secrets -n ${{ env.NAMESPACE }} -o jsonpath='{.data.connection-string}' | base64 -d)
-        if echo "$DECODED_CONN" | grep -Eq 'Password=.+$'; then
-          echo "✅ Connection string gravada com senha"
-        else
-          echo "❌ Connection string inválida (senha ausente)"
-          exit 1
-        fi
-      env:
-        POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
+          # Validar connection string
+          DECODED_CONN=$(kubectl get secret database-secrets -n agrosolutions-properties -o jsonpath='{.data.connection-string}' | base64 -d)
+          if echo "$DECODED_CONN" | grep -Eq 'Password=.+'; then
+            echo "✅ Secrets configurados com sucesso!"
+          else
+            echo "❌ Connection string inválida (senha ausente)"
+            exit 1
+          fi
 
-    - name: Apply Storage Class and Volumes
-      run: |
-        kubectl apply -f k8s/production/storage-class.yaml
-        kubectl apply -f k8s/production/volumes.yaml
+          echo "🔧 Aplicando ConfigMaps..."
+          kubectl apply -f k8s/production/configmaps.yaml
 
-    - name: Apply ConfigMaps
-      run: |
-        kubectl apply -f k8s/production/configmaps.yaml
+          echo "💾 Aplicando Storage Class e Volumes..."
+          kubectl apply -f k8s/production/storage-class.yaml
+          kubectl apply -f k8s/production/volumes.yaml
 
-    - name: Apply Services
-      run: |
-        kubectl apply -f k8s/production/services.yaml
+          echo "🗄️ Deployando banco de dados..."
+          kubectl apply -f k8s/production/databases.yaml
 
-    - name: Apply Database Deployment
-      run: |
-        kubectl apply -f k8s/production/databases.yaml
-        echo "Waiting for database to be ready..."
-        kubectl wait --for=condition=ready pod -l app=properties-db -n ${{ env.NAMESPACE }} --timeout=300s || echo "Database not ready yet, continuing..."
+          echo "📡 Aplicando Services..."
+          kubectl apply -f k8s/production/services.yaml
 
-    - name: Apply API Deployment
-      run: |
-        kubectl apply -f k8s/production/deployment.yaml
-        SET_IMAGE_OUTPUT=$(kubectl set image deployment/properties-api \
-          properties-api=${{ steps.build-image.outputs.image }} \
-          -n ${{ env.NAMESPACE }})
-        echo "$SET_IMAGE_OUTPUT"
+          echo "☁️ Aplicando Infrastructure configs..."
+          kubectl apply -f k8s/production/infrastructure.yaml
 
-        if echo "$SET_IMAGE_OUTPUT" | grep -qi "updated"; then
-          kubectl rollout status deployment/properties-api -n ${{ env.NAMESPACE }} --timeout=5m
-        else
-          echo "Imagem já aplicada. Reiniciando deployment para aplicar secrets/config atualizados..."
-          kubectl rollout restart deployment/properties-api -n ${{ env.NAMESPACE }}
-          kubectl rollout status deployment/properties-api -n ${{ env.NAMESPACE }} --timeout=5m
-        fi
+          echo "⏳ Aguardando banco de dados ficar pronto..."
+          kubectl wait --for=condition=ready pod -l app=properties-db -n agrosolutions-properties --timeout=300s || true
 
-    - name: Apply HPA
-      run: |
-        kubectl apply -f k8s/production/hpa.yaml
+          echo "🚀 Aplicando deployment da aplicação..."
+          kubectl apply -f k8s/production/deployment.yaml
 
-    - name: Apply Ingress
-      run: |
-        kubectl apply -f k8s/production/ingress-aws.yaml
+          echo "🔄 Aplicando HPA..."
+          kubectl apply -f k8s/production/hpa.yaml
 
-    - name: Apply Observability (if exists)
-      run: |
-        kubectl apply -f k8s/production/observability.yaml || echo "Observability manifests not found, skipping..."
+          echo "🌐 Aplicando Ingress..."
+          kubectl apply -f k8s/production/ingress-aws.yaml
 
-    - name: Verify deployment
-      run: |
-        echo "### Deployment Status" >> $GITHUB_STEP_SUMMARY
-        kubectl get deployments -n ${{ env.NAMESPACE }} >> $GITHUB_STEP_SUMMARY
-        echo "" >> $GITHUB_STEP_SUMMARY
-        echo "### Pods" >> $GITHUB_STEP_SUMMARY
-        kubectl get pods -n ${{ env.NAMESPACE }} >> $GITHUB_STEP_SUMMARY
-        echo "" >> $GITHUB_STEP_SUMMARY
-        echo "### Services" >> $GITHUB_STEP_SUMMARY
-        kubectl get services -n ${{ env.NAMESPACE }} >> $GITHUB_STEP_SUMMARY
-        echo "" >> $GITHUB_STEP_SUMMARY
-        echo "### Ingress" >> $GITHUB_STEP_SUMMARY
-        kubectl get ingress -n ${{ env.NAMESPACE }} >> $GITHUB_STEP_SUMMARY
+          echo "⚙️ Aplicando Resource Configs..."
+          kubectl apply -f k8s/production/resource-configs.yaml
 
-    - name: Run health check
-      run: |
-        echo "Waiting for pods to be ready..."
-        kubectl wait --for=condition=ready pod \
-          -l app=properties-api \
-          -n ${{ env.NAMESPACE }} \
-          --timeout=300s
-        
-        echo "Checking health endpoints..."
-        POD_NAME=$(kubectl get pod -l app=properties-api -n ${{ env.NAMESPACE }} -o jsonpath='{.items[0].metadata.name}')
-        kubectl exec -n ${{ env.NAMESPACE }} $POD_NAME -- wget -qO- http://localhost:8080/health || echo "Health check failed"
+          echo "📊 Aplicando Observability..."
+          kubectl apply -f k8s/production/observability.yaml || echo "Observability manifests not found, skipping..."
 
-    - name: Notify deployment success
-      if: success()
-      run: |
-        echo "✅ Deployment successful!" >> $GITHUB_STEP_SUMMARY
-        echo "Environment: ${{ github.event.inputs.environment || 'production' }}" >> $GITHUB_STEP_SUMMARY
-        echo "Image: ${{ steps.build-image.outputs.image }}" >> $GITHUB_STEP_SUMMARY
-        echo "Namespace: ${{ env.NAMESPACE }}" >> $GITHUB_STEP_SUMMARY
+          echo "✅ Manifestos aplicados com sucesso!"
 
-    - name: Notify deployment failure
-      if: failure()
-      run: |
-        echo "❌ Deployment failed!" >> $GITHUB_STEP_SUMMARY
-        echo "Please check the logs above for details." >> $GITHUB_STEP_SUMMARY
-        echo "" >> $GITHUB_STEP_SUMMARY
-        echo "### Diagnostics" >> $GITHUB_STEP_SUMMARY
-        kubectl get pods -n ${{ env.NAMESPACE }} >> $GITHUB_STEP_SUMMARY || true
-        kubectl describe deployment properties-api -n ${{ env.NAMESPACE }} >> $GITHUB_STEP_SUMMARY || true
+      - name: Verify Deployment
+        run: |
+          echo "🔍 Verificando status do deploy..."
+
+          echo "Pods:"
+          kubectl get pods -n agrosolutions-properties
+
+          echo "Services:"
+          kubectl get svc -n agrosolutions-properties
+
+          echo "Ingress:"
+          kubectl get ingress -n agrosolutions-properties
+
+          # Aguardar rollout do deployment
+          echo "⏳ Aguardando rollout da Properties API..."
+          kubectl rollout status deployment/properties-api -n agrosolutions-properties --timeout=300s
+
+          # Status final
+          echo "📊 Status final dos deployments:"
+          kubectl get deployments -n agrosolutions-properties
+          kubectl get pods -n agrosolutions-properties -o wide
+
+          # HPA status
+          echo "📈 Status do HPA:"
+          kubectl get hpa -n agrosolutions-properties
+
+          # Teste de saúde
+          echo "🏥 Testando health endpoint..."
+          LOAD_BALANCER=$(kubectl get ingress properties-api-ingress -n agrosolutions-properties -o jsonpath='{.status.loadBalancer.ingress[0].hostname}' 2>/dev/null || echo "pending")
+
+          if [ "$LOAD_BALANCER" != "pending" ] && [ -n "$LOAD_BALANCER" ]; then
+            echo "Load Balancer: $LOAD_BALANCER"
+            echo "Aguardando propagação do ingress (30s)..."
+            sleep 30
+
+            # Testar endpoint com retry
+            for i in {1..5}; do
+              echo "Tentativa $i/5 - Testando health endpoint..."
+              if curl -f -H "Host: api.agrosolutions.com" "http://$LOAD_BALANCER/properties/health/ready" --connect-timeout 10 --max-time 30; then
+                echo "✅ Health check passou!"
+                break
+              else
+                echo "⚠️ Health check falhou, tentando novamente em 10s..."
+                sleep 10
+              fi
+
+              if [ $i -eq 5 ]; then
+                echo "⚠️ Health check não passou após 5 tentativas (pode estar OK, ingress pode demorar a propagar)"
+              fi
+            done
+          else
+            echo "⏳ Load Balancer ainda não provisionado, verifique manualmente após alguns minutos"
+          fi
+
+          echo "🚀 Deploy concluído com sucesso!"
+
+      - name: Deployment Summary
+        if: success()
+        run: |
+          echo "📊 DEPLOYMENT SUMMARY"
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+          echo "✅ Build: SUCCESS"
+          echo "✅ Docker Image: ${{ steps.build-image.outputs.image }}"
+          echo "✅ Deployment: SUCCESS"
+          echo "🌍 Environment: Production (AWS EKS)"
+          echo "📅 Deployed at: $(date -u +'%Y-%m-%d %H:%M:%S UTC')"
+          echo "🆔 Commit: ${{ github.sha }}"
+          echo "👤 Author: ${{ github.actor }}"
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+
+      - name: Rollback on failure
+        if: failure()
+        run: |
+          echo "❌ Deploy falhou. Executando rollback..."
+
+          if kubectl cluster-info &> /dev/null; then
+            echo "Conexão com Kubernetes OK, executando rollback..."
+
+            if kubectl get deployment properties-api -n agrosolutions-properties &> /dev/null; then
+              echo "⏪ Fazendo rollback da Properties API..."
+              kubectl rollout undo deployment/properties-api -n agrosolutions-properties
+            fi
+
+            echo "📋 Logs do pod com falha:"
+            kubectl logs -n agrosolutions-properties -l app=properties-api --tail=50 || true
+
+            echo "📋 Describe do deployment:"
+            kubectl describe deployment properties-api -n agrosolutions-properties || true
+
+            echo "✅ Rollback executado. Verifique os logs para detalhes do erro."
+          else
+            echo "❌ Não foi possível conectar ao Kubernetes. Rollback manual necessário."
+            exit 1
+          fi
