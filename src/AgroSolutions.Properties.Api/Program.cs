@@ -80,7 +80,7 @@ app.MapControllers();
 app.MapHealthChecks("/health");
 app.MapHealthChecks(
     "/health/ready",
-    new HealthCheckOptions { Predicate = check => check.Tags.Contains("ready") }
+    new HealthCheckOptions { Predicate = check => check.Tags.Contains("db") }
 );
 app.MapHealthChecks("/health/live", new HealthCheckOptions { Predicate = _ => false });
 

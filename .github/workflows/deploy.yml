@@ -132,7 +132,7 @@ jobs:
           # 1) Tentar reutilizar a senha do pod do DB em execução
           DB_POD=$(kubectl get pod -n agrosolutions-properties -l app=properties-db -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || true)
           if [ -n "$DB_POD" ]; then
-            EFFECTIVE_PASSWORD=$(kubectl exec -n agrosolutions-properties "$DB_POD" -- printenv POSTGRES_PASSWORD 2>/dev/null || true)
+            EFFECTIVE_PASSWORD=$(kubectl exec -n agrosolutions-properties "$DB_POD" -c postgres -- printenv POSTGRES_PASSWORD 2>/dev/null || true)
             if [ -n "$EFFECTIVE_PASSWORD" ]; then
               echo "✅ Senha obtida do pod do banco em execução"
             fi
@@ -294,8 +294,19 @@ jobs:
             echo "Conexão com Kubernetes OK, executando rollback..."
 
             if kubectl get deployment properties-api -n agrosolutions-properties &> /dev/null; then
-              echo "⏪ Fazendo rollback da Properties API..."
-              kubectl rollout undo deployment/properties-api -n agrosolutions-properties
+              # Verificar se existe histórico de rollout antes de tentar rollback
+              HISTORY=$(kubectl rollout history deployment/properties-api -n agrosolutions-properties 2>&1 || true)
+              if echo "$HISTORY" | grep -q "REVISION"; then
+                REVISION_COUNT=$(echo "$HISTORY" | grep -c "^[0-9]" || true)
+                if [ "$REVISION_COUNT" -gt "1" ]; then
+                  echo "⏪ Fazendo rollback da Properties API..."
+                  kubectl rollout undo deployment/properties-api -n agrosolutions-properties || true
+                else
+                  echo "⚠️ Apenas uma revisão encontrada, rollback não é possível (primeiro deploy)"
+                fi
+              else
+                echo "⚠️ Sem histórico de rollout disponível"
+              fi
             fi
 
             echo "📋 Logs do pod com falha:"
@@ -304,7 +315,10 @@ jobs:
             echo "📋 Describe do deployment:"
             kubectl describe deployment properties-api -n agrosolutions-properties || true
 
-            echo "✅ Rollback executado. Verifique os logs para detalhes do erro."
+            echo "📋 Events do namespace:"
+            kubectl get events -n agrosolutions-properties --sort-by='.lastTimestamp' | tail -20 || true
+
+            echo "✅ Diagnóstico concluído. Verifique os logs para detalhes do erro."
           else
             echo "❌ Não foi possível conectar ao Kubernetes. Rollback manual necessário."
             exit 1
