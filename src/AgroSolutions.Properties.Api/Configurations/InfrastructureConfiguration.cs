@@ -68,16 +68,7 @@ public static class InfrastructureConfiguration
                         m.SetEntityName("agrosolutions-user-events")
                     );
 
-                    // Mapear eventos de propriedades para o tópico SNS correto
-                    cfg.Message<SensorUpdatedEvent>(m =>
-                        m.SetEntityName("agrosolutions-property-events")
-                    );
-                    cfg.Message<SensorDeletedEvent>(m =>
-                        m.SetEntityName("agrosolutions-property-events")
-                    );
-                    cfg.Message<TalhaoCreatedEvent>(m =>
-                        m.SetEntityName("agrosolutions-property-events")
-                    );
+                    cfg.Message<SensorEvent>(m => m.SetEntityName("agrosolutions-property-events"));
 
                     // Retry policy com exponential backoff
                     cfg.UseMessageRetry(r =>

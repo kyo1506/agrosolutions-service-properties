@@ -1,3 +1,4 @@
+using AgroSolutions.Properties.Domain.Enums;
 using AgroSolutions.Properties.Domain.Events;
 using AgroSolutions.Properties.Domain.Interfaces;
 using MediatR;
@@ -17,15 +18,14 @@ public class DeleteSensorCommandHandler(
 
         await sensorRepository.DeleteAsync(request.Id, cancellationToken);
 
-        // Publicar evento para notificar outros serviços sobre a remoção
-        var @event = new SensorDeletedEvent
+        var @event = new SensorEvent
         {
+            FieldId = sensor.TalhaoId,
             SensorId = sensor.Id,
-            CodigoIdentificacao = sensor.CodigoIdentificacao,
-            TalhaoId = sensor.TalhaoId,
-            FazendaId = sensor.Talhao.FazendaId,
-            ProdutorId = sensor.Talhao.Fazenda.ProdutorId,
-            Timestamp = DateTime.UtcNow,
+            DtCreated = sensor.DataInstalacao,
+            TypeSensor = SensorEvent.MapTipoSensor(sensor.Tipo),
+            StatusSensor = false,
+            TypeOperation = TypeOperation.Delete,
         };
 
         await eventPublisher.PublishAsync(@event, cancellationToken);

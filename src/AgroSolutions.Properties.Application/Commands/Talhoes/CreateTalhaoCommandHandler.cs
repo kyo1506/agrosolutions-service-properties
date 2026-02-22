@@ -8,17 +8,11 @@ namespace AgroSolutions.Properties.Application.Commands.Talhoes;
 
 public class CreateTalhaoCommandHandler(
     ITalhaoRepository talhaoRepository,
-    IFazendaRepository fazendaRepository,
     IEventPublisher eventPublisher
 ) : IRequestHandler<CreateTalhaoCommand, Guid>
 {
     public async Task<Guid> Handle(CreateTalhaoCommand request, CancellationToken cancellationToken)
     {
-        // Validar se fazenda existe
-        var fazenda =
-            await fazendaRepository.GetByIdAsync(request.FazendaId, cancellationToken)
-            ?? throw new InvalidOperationException($"Fazenda {request.FazendaId} não encontrada");
-
         var talhao = new Talhao
         {
             Id = Guid.NewGuid(),
@@ -36,7 +30,7 @@ public class CreateTalhaoCommandHandler(
         };
 
         // Criar sensores se fornecidos
-        if (request.Sensores?.Any() == true)
+        if (request.Sensores?.Count > 0)
         {
             foreach (var sensorDto in request.Sensores)
             {
@@ -64,18 +58,15 @@ public class CreateTalhaoCommandHandler(
 
                 talhao.Sensores.Add(sensor);
 
-                // Publicar evento de sensor criado
                 await eventPublisher.PublishAsync(
-                    new SensorUpdatedEvent
+                    new SensorEvent
                     {
+                        FieldId = sensor.TalhaoId,
                         SensorId = sensor.Id,
-                        CodigoIdentificacao = sensor.CodigoIdentificacao,
-                        TalhaoId = sensor.TalhaoId,
-                        FazendaId = fazenda.Id,
-                        ProdutorId = fazenda.ProdutorId,
-                        TipoSensor = sensor.Tipo.ToString(),
-                        IsActive = true,
-                        Timestamp = DateTime.UtcNow,
+                        DtCreated = sensor.DataInstalacao,
+                        TypeSensor = SensorEvent.MapTipoSensor(sensor.Tipo),
+                        StatusSensor = true,
+                        TypeOperation = TypeOperation.Create,
                     },
                     cancellationToken
                 );
@@ -83,19 +74,6 @@ public class CreateTalhaoCommandHandler(
         }
 
         await talhaoRepository.AddAsync(talhao, cancellationToken);
-
-        // Publicar evento de talhão criado
-        await eventPublisher.PublishAsync(
-            new TalhaoCreatedEvent
-            {
-                TalhaoId = talhao.Id,
-                Nome = talhao.Nome,
-                FazendaId = fazenda.Id,
-                ProdutorId = fazenda.ProdutorId,
-                Timestamp = DateTime.UtcNow,
-            },
-            cancellationToken
-        );
 
         return talhao.Id;
     }

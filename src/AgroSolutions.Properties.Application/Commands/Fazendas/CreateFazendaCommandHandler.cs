@@ -91,16 +91,14 @@ public class CreateFazendaCommandHandler(
 
                         // Publicar evento de sensor criado
                         await eventPublisher.PublishAsync(
-                            new SensorUpdatedEvent
+                            new SensorEvent
                             {
+                                FieldId = sensor.TalhaoId,
                                 SensorId = sensor.Id,
-                                CodigoIdentificacao = sensor.CodigoIdentificacao,
-                                TalhaoId = sensor.TalhaoId,
-                                FazendaId = fazenda.Id,
-                                ProdutorId = produtor.Id,
-                                TipoSensor = sensor.Tipo.ToString(),
-                                IsActive = true,
-                                Timestamp = DateTime.UtcNow,
+                                DtCreated = sensor.DataInstalacao,
+                                TypeSensor = SensorEvent.MapTipoSensor(sensor.Tipo),
+                                StatusSensor = true,
+                                TypeOperation = TypeOperation.Create,
                             },
                             cancellationToken
                         );
@@ -109,18 +107,7 @@ public class CreateFazendaCommandHandler(
 
                 fazenda.Talhoes.Add(talhao);
 
-                // Publicar evento de talhão criado
-                await eventPublisher.PublishAsync(
-                    new TalhaoCreatedEvent
-                    {
-                        TalhaoId = talhao.Id,
-                        Nome = talhao.Nome,
-                        FazendaId = fazenda.Id,
-                        ProdutorId = produtor.Id,
-                        Timestamp = DateTime.UtcNow,
-                    },
-                    cancellationToken
-                );
+                // TalhaoCreatedEvent removido: o Worker consome apenas SensorEvent
             }
         }
 

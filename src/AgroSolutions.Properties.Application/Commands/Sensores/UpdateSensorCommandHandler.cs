@@ -36,16 +36,14 @@ public class UpdateSensorCommandHandler(
 
         // Publicar evento de atualização
         await eventPublisher.PublishAsync(
-            new SensorUpdatedEvent
+            new SensorEvent
             {
+                FieldId = sensor.TalhaoId,
                 SensorId = sensor.Id,
-                CodigoIdentificacao = sensor.CodigoIdentificacao,
-                TalhaoId = sensor.TalhaoId,
-                FazendaId = sensor.Talhao.FazendaId,
-                ProdutorId = sensor.Talhao.Fazenda.ProdutorId,
-                TipoSensor = sensor.Tipo.ToString(),
-                IsActive = sensor.IsActive,
-                Timestamp = DateTime.UtcNow,
+                DtCreated = sensor.DataInstalacao,
+                TypeSensor = SensorEvent.MapTipoSensor(sensor.Tipo),
+                StatusSensor = sensor.IsActive,
+                TypeOperation = TypeOperation.Update,
             },
             cancellationToken
         );

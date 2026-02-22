@@ -38,16 +38,14 @@ public class CreateSensorCommandHandler(
         await sensorRepository.AddAsync(sensor, cancellationToken);
 
         // Publicar evento de domínio para sincronizar cache dos workers
-        var @event = new SensorUpdatedEvent
+        var @event = new SensorEvent
         {
+            FieldId = sensor.TalhaoId,
             SensorId = sensor.Id,
-            CodigoIdentificacao = sensor.CodigoIdentificacao,
-            TalhaoId = sensor.TalhaoId,
-            FazendaId = talhao.FazendaId,
-            ProdutorId = talhao.Fazenda?.ProdutorId ?? Guid.Empty,
-            TipoSensor = sensor.Tipo.ToString(),
-            IsActive = sensor.IsActive,
-            Timestamp = DateTime.UtcNow,
+            DtCreated = sensor.DataInstalacao,
+            TypeSensor = SensorEvent.MapTipoSensor(sensor.Tipo),
+            StatusSensor = sensor.IsActive,
+            TypeOperation = TypeOperation.Create,
         };
 
         await eventPublisher.PublishAsync(@event, cancellationToken);
