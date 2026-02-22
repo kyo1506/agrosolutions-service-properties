@@ -48,7 +48,9 @@ public class CreateFazendaCommandHandler(
                     Nome = talhaoDto.Nome,
                     Area = talhaoDto.Area,
                     Cultura = talhaoDto.Cultura,
-                    DataPlantio = talhaoDto.DataPlantio,
+                    DataPlantio = talhaoDto.DataPlantio.HasValue
+                        ? DateTime.SpecifyKind(talhaoDto.DataPlantio.Value, DateTimeKind.Utc)
+                        : null,
                     Observacoes = talhaoDto.Observacoes,
                     Status = TalhaoStatus.Normal,
                     FazendaId = fazenda.Id,

@@ -25,7 +25,9 @@ public class CreateTalhaoCommandHandler(
             Nome = request.Nome,
             Area = request.Area,
             Cultura = request.Cultura,
-            DataPlantio = request.DataPlantio,
+            DataPlantio = request.DataPlantio.HasValue
+                ? DateTime.SpecifyKind(request.DataPlantio.Value, DateTimeKind.Utc)
+                : null,
             Observacoes = request.Observacoes,
             Status = TalhaoStatus.Normal,
             FazendaId = request.FazendaId,

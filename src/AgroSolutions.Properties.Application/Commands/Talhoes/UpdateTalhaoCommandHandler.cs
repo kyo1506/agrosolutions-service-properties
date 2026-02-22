@@ -15,7 +15,9 @@ public class UpdateTalhaoCommandHandler(ITalhaoRepository talhaoRepository)
         talhao.Nome = request.Nome;
         talhao.Area = request.Area;
         talhao.Cultura = request.Cultura;
-        talhao.DataPlantio = request.DataPlantio;
+        talhao.DataPlantio = request.DataPlantio.HasValue
+            ? DateTime.SpecifyKind(request.DataPlantio.Value, DateTimeKind.Utc)
+            : null;
         talhao.Observacoes = request.Observacoes;
         talhao.UpdatedAt = DateTime.UtcNow;
 
